@@ -1,15 +1,13 @@
 {-# LANGUAGE TemplateHaskell, QuasiQuotes #-}
-module URI.TH where
+module Network.URI.Template.TH where
 import Data.List
-import Text.Parsec.Prim
-import Text.Parsec.String
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Quote
 import Network.HTTP.Base
-import URI.Parser
-import URI.Template
-import URI.Types
+import Network.URI.Template.Internal
+import Network.URI.Template.Parser
+import Network.URI.Template.Types
 
 {-
   mTpl <- parse qqInput
@@ -28,18 +26,18 @@ variableNames = nub . foldr go []
     go (Embed m vs) l = map variableName vs ++ l
 
 segmentToExpr :: TemplateSegment -> Q Exp
-segmentToExpr (Literal str) = appE (conE $ mkName "URI.Types.Literal") (litE $ StringL str)
-segmentToExpr (Embed m vs) = appE (appE (conE $ mkName "URI.Types.Embed") modifier) $ listE $ map variableToExpr vs
+segmentToExpr (Literal str) = appE (conE 'Literal) (litE $ StringL str)
+segmentToExpr (Embed m vs) = appE (appE (conE 'Embed) modifier) $ listE $ map variableToExpr vs
   where
-    modifier = conE $ mkName ("URI.Types." ++ show m)
+    modifier = conE $ mkName ("Network.URI.Template.Types." ++ show m)
     variableToExpr (Variable varName varModifier) = [| Variable $(litE $ StringL varName) $(varModifierE varModifier) |]
     varModifierE vm = case vm of
-      Normal -> conE $ mkName "URI.Types.Normal"
-      Explode -> conE $ mkName "URI.Types.Explode"
-      (MaxLength x) -> appE (conE $ mkName "URI.Types.MaxLength") $ litE $ IntegerL $ fromIntegral x
+      Normal -> conE 'Normal
+      Explode -> conE 'Explode
+      (MaxLength x) -> appE (conE 'MaxLength) $ litE $ IntegerL $ fromIntegral x
 
 templateToExp :: UriTemplate -> Q Exp
-templateToExp ts = [| render $(listE $ map segmentToExpr ts) $(templateValues) |]
+templateToExp ts = [| render' $(listE $ map segmentToExpr ts) $(templateValues) |]
   where
     templateValues = listE $ map makePair vns
     vns = variableNames ts
@@ -58,7 +56,7 @@ quasiEval :: String -> Q Exp
 quasiEval str = do
   l <- location
   let parseLoc = loc_module l ++ ":" ++ show (loc_start l)
-  let res = parse uriTemplate parseLoc str
+  let res = parseTemplate str
   case res of
     Left err -> fail $ show err
     Right tpl -> templateToExp tpl

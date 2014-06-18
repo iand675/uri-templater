@@ -1,18 +1,17 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Main where
 import Control.Monad.Writer.Strict
-import URI.Parser
-import URI.Template
-import URI.TH
-import URI.Types
+import Network.URI.Template.Parser
+import Network.URI.Template
+import Network.URI.Template.TH
+import Network.URI.Template.Types
 import System.Exit
-import Test.HUnit hiding (test, path)
+import Text.PrettyPrint.ANSI.Leijen (Doc, renderCompact, displayS)
+import Test.HUnit hiding (test, path, Label)
 
-{-describe ''Something $ do-}
-  {-it "somethings the something." $ do-}
-    {-order <- newOrder-}
-    {-let order' = addEntry order $ LineItem { item = Item { price = Money USD 1.11 } }-}
-    {-expect (total order') `to` Equal $ Money USD 1.11-}
+-- Just being lazy here
+instance Eq Doc where
+  (==) d1 d2 = show d1 == show d2
 
 type TestRegistry = Writer [Test]
 
@@ -43,7 +42,7 @@ parserTests = label "Parser Tests" $ suite $ do
   label "Simple" $ parserTest "{foo}" $ Embed Simple [foo]
   label "Reserved" $ parserTest "{+foo}" $ Embed Reserved [foo]
   label "Fragment" $ parserTest "{#foo}" $ Embed Fragment [foo]
-  label "Label" $ parserTest "{.foo}" $ Embed URI.Types.Label [foo]
+  label "Label" $ parserTest "{.foo}" $ Embed Label [foo]
   label "Path Segment" $ parserTest "{/foo}" $ Embed PathSegment [foo]
   label "Path Parameter" $ parserTest "{;foo}" $ Embed PathParameter [foo]
   label "Query" $ parserTest "{?foo}" $ Embed Query [foo]
@@ -53,7 +52,7 @@ parserTests = label "Parser Tests" $ suite $ do
   label "Multiple Variables" $ parserTest "{foo,bar}" $ Embed Simple [Variable "foo" Normal, Variable "bar" Normal]
 
 parserTest :: String -> TemplateSegment -> TestRegistry ()
-parserTest t e = test $ parseTemplate "test" t @?= Right [e]
+parserTest t e = test $ parseTemplate t @?= Right [e]
 
 embedTests = label "Embed Tests" $ suite $ do
   label "Literal" $ embedTest "foo" "foo"
@@ -72,8 +71,8 @@ embedTestEnv = [("foo", Single "bar")]
 
 embedTest :: String -> String -> TestRegistry ()
 embedTest t expect = test $ do
-  let (Right tpl) = parseTemplate "test" t
-  let rendered = render' tpl embedTestEnv
+  let (Right tpl) = parseTemplate t
+  let rendered = render tpl embedTestEnv
   rendered @?= expect
 
 var :: String

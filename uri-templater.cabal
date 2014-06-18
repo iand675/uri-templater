@@ -3,8 +3,8 @@
 
 name:                uri-templater
 version:             0.1.0.0
-synopsis:            Quasiquoting for RFC 6570 URI Templates
-description:         Quasiquoting for RFC 6570 URI Templates
+synopsis:            Parsing & Quasiquoting for RFC 6570 URI Templates
+description:         Parsing & Quasiquoting for RFC 6570 URI Templates
 homepage:            http://github.com/sanetracker/uri-templater
 license:             MIT
 license-file:        LICENSE
@@ -20,13 +20,29 @@ source-repository    head
 
 
 library
-  exposed-modules:   URI.Template, URI.TH, URI.Types, URI.Parser
-  -- other-modules:       
-  build-depends:     base ==4.6.*, parsec ==3.1.*, template-haskell ==2.8.*, HTTP ==4000.2.*, dlist, mtl
+  exposed-modules:   Network.URI.Template,
+                     Network.URI.Template.TH,
+                     Network.URI.Template.Types,
+                     Network.URI.Template.Parser,
+                     Network.URI.Template.Internal
+  build-depends:     base <5,
+                     trifecta,
+                     charset,
+                     parsers,
+                     template-haskell,
+                     HTTP,
+                     dlist,
+                     mtl,
+                     ansi-wl-pprint
   hs-source-dirs:    src
 
 test-suite test-uri-templates
-   type:              exitcode-stdio-1.0
-   main-is:           Test.hs
-   hs-source-dirs:    src, test
-   build-depends:     base ==4.6.*, parsec ==3.1.*, template-haskell ==2.8.*, HTTP ==4000.2.*, HUnit ==1.2.*, mtl, dlist
+   type:             exitcode-stdio-1.0
+   main-is:          Test.hs
+   hs-source-dirs:   test
+   build-depends:    base,
+                     mtl,
+                     uri-templater,
+                     template-haskell,
+                     HUnit,
+                     ansi-wl-pprint

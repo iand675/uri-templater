@@ -1,13 +1,12 @@
-module URI.Parser where
+module Network.URI.Template.Parser where
 import Control.Applicative
 import Data.Char
 import Data.List
-import Text.Parsec.Char
-import Text.Parsec.Combinator
-import Text.Parsec.Prim hiding ((<|>), many)
-import Text.Parsec.String
-import Text.Parsec.Token
-import URI.Types
+import Data.Monoid
+import Text.Trifecta
+import Text.Parser.Char
+import Text.PrettyPrint.ANSI.Leijen (Doc)
+import Network.URI.Template.Types
 
 range :: Char -> Char -> Parser Char
 range l r = satisfy (\c -> l <= c && c <= r)
@@ -57,7 +56,7 @@ literalChar = (choice $ map char ['\x21', '\x23', '\x24', '\x26', '\x3D', '\x5D'
   <|> iprivate
 
 literal :: Parser TemplateSegment
-literal = (Literal . concat) <$> many1 ((pure <$> literalChar) <|> pctEncoded)
+literal = (Literal . concat) <$> some ((pure <$> literalChar) <|> pctEncoded)
 
 variables :: Parser TemplateSegment
 variables = Embed <$> modifier <*> sepBy1 variable (spaces *> char ',' *> spaces)
@@ -78,14 +77,15 @@ modifier = (choice $ map (uncurry charMeans) modifiers) <|> pure Simple
       , (';', PathParameter)
       , ('?', Query)
       , ('&', QueryContinuation)
+      , ('@', Alias)
       ]
 
 variable :: Parser Variable
 variable = Variable <$> name <*> valueModifier
   where
-    name = concat <$> many1 ((pure <$> (alphaNum <|> char '_')) <|> pctEncoded)
+    name = concat <$> some ((pure <$> (alphaNum <|> char '_')) <|> pctEncoded)
     valueModifier = charMeans '*' Explode <|> (MaxLength <$> (char ':' *> parseInt)) <|> pure Normal
-    parseInt = read <$> many1 digit
+    parseInt = read <$> some digit
 
 embed :: Parser TemplateSegment
 embed = between (char '{') (char '}') variables
@@ -93,8 +93,8 @@ embed = between (char '{') (char '}') variables
 uriTemplate :: Parser UriTemplate
 uriTemplate = spaces *> many (literal <|> embed)
 
-parseTemplate :: String -> String -> Either String UriTemplate
-parseTemplate loc t = case parse uriTemplate loc t of
-                        Left err -> Left $ show err
-                        Right t -> Right t
+parseTemplate :: String -> Either Doc UriTemplate
+parseTemplate t = case parseString uriTemplate mempty t of
+                        Failure err -> Left err
+                        Success r -> Right r
 

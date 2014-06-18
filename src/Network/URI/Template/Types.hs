@@ -1,5 +1,5 @@
 {-# LANGUAGE EmptyDataDecls, GADTs, FunctionalDependencies, MultiParamTypeClasses, FlexibleContexts, TypeSynonymInstances, FlexibleInstances #-}
-module URI.Types where
+module Network.URI.Template.Types where
 
 data SingleElement
 data AssociativeListElement
@@ -17,7 +17,10 @@ data InternalTemplateValue
   | AssociativeVal [(String, String)]
   | ListVal [String]
 
+fromSingle :: TemplateValue SingleElement -> String
 fromSingle (Single s) = s
+
+fromSingleVal :: InternalTemplateValue -> String
 fromSingleVal (SingleVal s) = s
 
 internalize :: TemplateValue a -> InternalTemplateValue
@@ -65,6 +68,7 @@ data Modifier
   | PathParameter
   | Query
   | QueryContinuation
+  | Alias
   deriving (Read, Show, Eq)
 
 

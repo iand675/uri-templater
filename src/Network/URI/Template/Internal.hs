@@ -1,12 +1,12 @@
 {-# LANGUAGE RankNTypes, GADTs, ScopedTypeVariables #-}
-module URI.Template where
+module Network.URI.Template.Internal where
 import Control.Monad.Writer.Strict
 import Data.DList hiding (map)
 import Data.List (intersperse)
 import Data.Maybe
 import Data.Monoid
 import Network.HTTP.Base (urlEncode)
-import URI.Types
+import Network.URI.Template.Types
 
 type StringBuilder = Writer (DList Char)
 
@@ -101,11 +101,11 @@ processVariables env m vs = sequence_ $ processedVariables
     processedVariables :: [StringBuilder ()]
     processedVariables = zipWith uncurry processors nonEmptyVariables
 
-render' :: forall a. UriTemplate -> [(String, TemplateValue a)] -> String
-render' tpl env = render tpl $ map (\(l, r) -> (l, internalize r)) env
+render :: forall a. UriTemplate -> [(String, TemplateValue a)] -> String
+render tpl env = render' tpl $ map (\(l, r) -> (l, internalize r)) env
 
-render :: UriTemplate -> [(String, InternalTemplateValue)] -> String
-render tpl env = toList $ execWriter $ mapM_ go tpl
+render' :: UriTemplate -> [(String, InternalTemplateValue)] -> String
+render' tpl env = toList $ execWriter $ mapM_ go tpl
   where
     go :: TemplateSegment -> StringBuilder ()
     go (Literal s) = addString s
