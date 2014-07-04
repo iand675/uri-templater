@@ -1,47 +1,78 @@
-{-# LANGUAGE EmptyDataDecls, GADTs, FunctionalDependencies, MultiParamTypeClasses, FlexibleContexts, TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE EmptyDataDecls, GADTs, FunctionalDependencies, MultiParamTypeClasses, FlexibleContexts, TypeSynonymInstances, FlexibleInstances, TypeFamilies, OverlappingInstances, GeneralizedNewtypeDeriving #-}
 module Network.URI.Template.Types where
+import Control.Arrow
+import Data.Foldable as F
+import Data.List
+import qualified Data.String as S
+import qualified Data.HashMap.Strict as HS
+import qualified Data.Map.Strict as MS
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Vector as V
 
-data SingleElement
-data AssociativeListElement
-data ListElement
-
-newtype ListElem a = ListElem { fromListElem :: a }
+data Single
+data Associative
+data List
 
 data TemplateValue a where
-  Single :: String -> TemplateValue SingleElement
-  Associative :: [(String, TemplateValue SingleElement)] -> TemplateValue AssociativeListElement
-  List :: [TemplateValue SingleElement] -> TemplateValue ListElement
+  Single :: String -> TemplateValue Single
+  Associative :: [(TemplateValue Single, TemplateValue Single)] -> TemplateValue Associative
+  List :: [TemplateValue Single] -> TemplateValue List
 
-data InternalTemplateValue
-  = SingleVal String
-  | AssociativeVal [(String, String)]
-  | ListVal [String]
+instance Show (TemplateValue a) where
+  show (Single s) = "Single " ++ s
+  show (Associative as) = "Associative [" ++ intercalate ", " (map formatTuple as) ++ "]"
+    where
+      formatTuple (k, v) = "(" ++ show k ++ ", " ++ show v ++ ")"
+  show (List s) = "List [" ++ intercalate ", " (map show s) ++ "]"
 
-fromSingle :: TemplateValue SingleElement -> String
-fromSingle (Single s) = s
+data WrappedValue where
+  WrappedValue :: TemplateValue a -> WrappedValue
 
-fromSingleVal :: InternalTemplateValue -> String
-fromSingleVal (SingleVal s) = s
+newtype TemplateString = String { fromString :: String }
+  deriving (Read, Show, Eq, S.IsString)
 
-internalize :: TemplateValue a -> InternalTemplateValue
-internalize (Single s) = SingleVal s
-internalize (Associative ls) = AssociativeVal $ map (\(l, r) -> (l, fromSingleVal $ internalize r)) ls
-internalize (List l) = ListVal $ map (fromSingleVal . internalize) l
+newtype AList k v = AList { fromAList :: [(k, v)] }
 
-class ToTemplateValue a e | a -> e where
-  toTemplateValue :: a -> TemplateValue e
+class ToTemplateValue a where
+  type TemplateRep a
+  toTemplateValue :: a -> TemplateValue (TemplateRep a)
 
-instance ToTemplateValue Int SingleElement where
+instance ToTemplateValue Int where
+  type TemplateRep Int = Single
   toTemplateValue = Single . show
 
-instance ToTemplateValue a SingleElement => ToTemplateValue (ListElem [a]) ListElement where
-  toTemplateValue = List . map toTemplateValue . fromListElem
+instance ToTemplateValue TemplateString where
+  type TemplateRep TemplateString = Single
+  toTemplateValue = Single . fromString
 
-instance ToTemplateValue a SingleElement => ToTemplateValue [(String, a)] AssociativeListElement where
-  toTemplateValue = Associative . map (\(l, r) -> (l, toTemplateValue r))
+instance (ToTemplateValue a, (TemplateRep a) ~ Single) => ToTemplateValue [a] where
+  type TemplateRep [a] = List
+  toTemplateValue = List . map toTemplateValue
 
-instance ToTemplateValue String SingleElement where
-  toTemplateValue = Single
+instance (ToTemplateValue k, (TemplateRep k) ~ Single, ToTemplateValue v, (TemplateRep v) ~ Single) => ToTemplateValue (AList k v) where
+  type TemplateRep (AList k v) = Associative
+  toTemplateValue = Associative . map (toTemplateValue *** toTemplateValue) . fromAList
+
+instance (ToTemplateValue a, (TemplateRep a) ~ Single) => ToTemplateValue (V.Vector a) where
+  type TemplateRep (V.Vector a) = List
+  toTemplateValue = List . F.toList . fmap toTemplateValue
+
+instance ToTemplateValue T.Text where
+  type TemplateRep T.Text = Single
+  toTemplateValue = Single . T.unpack
+
+instance ToTemplateValue TL.Text where
+  type TemplateRep TL.Text = Single
+  toTemplateValue = Single . TL.unpack
+
+instance (ToTemplateValue k, (TemplateRep k) ~ Single, ToTemplateValue v, (TemplateRep v) ~ Single) => ToTemplateValue (HS.HashMap k v) where
+  type TemplateRep (HS.HashMap k v) = Associative
+  toTemplateValue = toTemplateValue . AList . HS.toList
+
+instance (ToTemplateValue k, (TemplateRep k) ~ Single, ToTemplateValue v, (TemplateRep v) ~ Single) => ToTemplateValue (MS.Map k v) where
+  type TemplateRep (MS.Map k v) = Associative
+  toTemplateValue = toTemplateValue . AList . MS.toList
 
 data ValueModifier
   = Normal

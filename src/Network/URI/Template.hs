@@ -8,6 +8,8 @@ module Network.URI.Template (
   , ValueModifier(..)
   , TemplateValue(..)
   , ToTemplateValue(..)
+  , AList(..)
+  , TemplateString(..)
 ) where
 import Network.URI.Template.Internal
 import Network.URI.Template.Parser

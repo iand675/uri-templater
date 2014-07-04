@@ -9,16 +9,6 @@ import Network.URI.Template.Internal
 import Network.URI.Template.Parser
 import Network.URI.Template.Types
 
-{-
-  mTpl <- parse qqInput
-  case mTpl of
-    Left err -> error err
-    Right tpl -> do
-      varNames <- distinct <$> getAllVariableNames
-      convert varNames to [(varName, toTemplateValue $ varExpr for varName)]
-      render tpl convertedValues
--}
-
 variableNames :: UriTemplate -> [String]
 variableNames = nub . foldr go []
   where
@@ -29,7 +19,11 @@ segmentToExpr :: TemplateSegment -> Q Exp
 segmentToExpr (Literal str) = appE (conE 'Literal) (litE $ StringL str)
 segmentToExpr (Embed m vs) = appE (appE (conE 'Embed) modifier) $ listE $ map variableToExpr vs
   where
-    modifier = conE $ mkName ("Network.URI.Template.Types." ++ show m)
+    modifier = do
+      mname <- lookupValueName (show m)
+      case mname of
+        Nothing -> fail (show m ++ " is not a valid modifier")
+        Just n -> conE n
     variableToExpr (Variable varName varModifier) = [| Variable $(litE $ StringL varName) $(varModifierE varModifier) |]
     varModifierE vm = case vm of
       Normal -> conE 'Normal
@@ -41,16 +35,7 @@ templateToExp ts = [| render' $(listE $ map segmentToExpr ts) $(templateValues) 
   where
     templateValues = listE $ map makePair vns
     vns = variableNames ts
-    makePair str = [| ($(litE $ StringL str), internalize $ toTemplateValue $ $(varE $ mkName str)) |]
-
--- AppE (VarE 'concat) $ ListE $ concatMap segmentToExp ts
-
-{-segmentToExp (Literal s) = [LitE $ StringL s]-}
-{-segmentToExp (Embed m v) = map (AppE prefix . enc . VarE . mkName) v-}
-  {-where-}
-    {-enc = AppE (VarE $ encoder m)-}
-    {--- cons the prefix onto the beginning of each embedded segment-}
-    {-prefix = InfixE (Just $ LitE $ CharL $ subsequentSeparator m) (ConE $ '(:)) Nothing-}
+    makePair str = [| ($(litE $ StringL str), WrappedValue $ toTemplateValue $ $(varE $ mkName str)) |]
 
 quasiEval :: String -> Q Exp
 quasiEval str = do

@@ -1,5 +1,6 @@
-{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE QuasiQuotes, OverloadedStrings #-}
 module Main where
+import Control.Arrow
 import Control.Monad.Writer.Strict
 import Network.URI.Template.Parser
 import Network.URI.Template
@@ -67,7 +68,7 @@ embedTests = label "Embed Tests" $ suite $ do
   label "Explode" $ embedTest "{foo*}" "bar"
   label "Max Length" $ embedTest "{foo:1}" "b"
 
-embedTestEnv = [("foo", Single "bar")]
+embedTestEnv = [("foo", WrappedValue $ Single "bar")]
 
 embedTest :: String -> String -> TestRegistry ()
 embedTest t expect = test $ do
@@ -75,20 +76,20 @@ embedTest t expect = test $ do
   let rendered = render tpl embedTestEnv
   rendered @?= expect
 
-var :: String
+var :: TemplateString
 var = "value"
 
-hello :: String
+hello :: TemplateString
 hello = "Hello World!"
 
-path :: String
+path :: TemplateString
 path = "/foo/bar"
 
-list :: ListElem [String]
-list = ListElem ["red", "green", "blue"]
+list :: [TemplateString]
+list = ["red", "green", "blue"]
 
-keys :: [(String, String)]
-keys = [("semi", ";"), ("dot", "."), ("comma", ",")]
+keys :: AList TemplateString TemplateString
+keys = AList [("semi", ";"), ("dot", "."), ("comma", ",")]
 
 quasiQuoterTests = label "QuasiQuoter Tests" $ suite $ do
   label "Simple" $ test ([uri|{var}|] @?= "value")
