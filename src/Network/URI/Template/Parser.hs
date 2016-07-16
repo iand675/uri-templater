@@ -95,6 +95,6 @@ uriTemplate = spaces *> many (literal <|> embed)
 
 parseTemplate :: String -> Either Doc UriTemplate
 parseTemplate t = case parseString uriTemplate mempty t of
-                        Failure err -> Left err
+                        Failure err -> Left (_errDoc err)
                         Success r -> Right r
 
