@@ -2,10 +2,10 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                uri-templater
-version:             0.2.0.0
+version:             0.2.1.0
 synopsis:            Parsing & Quasiquoting for RFC 6570 URI Templates
 description:         Parsing & Quasiquoting for RFC 6570 URI Templates
-homepage:            http://github.com/sanetracker/uri-templater
+homepage:            http://github.com/iand675/uri-templater
 license:             MIT
 license-file:        LICENSE
 author:              Ian Duncan
@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.8
 source-repository    head
   type:                git
-  location:            http://github.com/sanetracker/uri-templater
+  location:            http://github.com/iand675/uri-templater
 
 library
   exposed-modules:   Network.URI.Template,
