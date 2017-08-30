@@ -50,10 +50,12 @@ pctEncoded = do
   return [h, d1, d2]
 
 literalChar :: Parser Char
-literalChar = (choice $ map char ['\x21', '\x23', '\x24', '\x26', '\x3D', '\x5D', '\x5F', '\x7E'])
-  <|> ranges [('\x28', '\x3B'), ('\x3F', '\x5B'), ('\x61', '\x7A')]
-  <|> ucschar
-  <|> iprivate
+literalChar =
+  (choice $ map char
+    ['\x21', '\x23', '\x24', '\x26', '\x3D', '\x5D', '\x5F', '\x7E']) <|>
+  ranges [('\x28', '\x3B'), ('\x3F', '\x5B'), ('\x61', '\x7A')] <|>
+  ucschar <|>
+  iprivate
 
 literal :: Parser TemplateSegment
 literal = (Literal . concat) <$> some ((pure <$> literalChar) <|> pctEncoded)
@@ -77,7 +79,10 @@ modifier = (choice $ map (uncurry charMeans) modifiers) <|> pure Simple
       , (';', PathParameter)
       , ('?', Query)
       , ('&', QueryContinuation)
-      , ('@', Alias)
+      , ('=', Reserved)
+      , ('@', Reserved)
+      , ('!', Reserved)
+      , ('|', Reserved)
       ]
 
 variable :: Parser Variable
@@ -94,7 +99,8 @@ uriTemplate :: Parser UriTemplate
 uriTemplate = spaces *> many (literal <|> embed)
 
 parseTemplate :: String -> Either Doc UriTemplate
-parseTemplate t = case parseString uriTemplate mempty t of
-                        Failure err -> Left (_errDoc err)
-                        Success r -> Right r
+parseTemplate t =
+  case parseString uriTemplate mempty t of
+    Failure err -> Left (_errDoc err)
+    Success r -> Right r
 

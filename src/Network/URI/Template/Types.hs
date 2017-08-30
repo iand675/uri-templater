@@ -32,7 +32,9 @@ data WrappedValue where
 newtype TemplateString = String { fromString :: String }
   deriving (Read, Show, Eq, S.IsString)
 
-newtype AList k v = AList { fromAList :: [(k, v)] }
+newtype AList k v = AList
+  { fromAList :: [(k, v)]
+  }
 
 class ToTemplateValue a where
   type TemplateRep a
@@ -80,8 +82,10 @@ data ValueModifier
   | MaxLength Int
   deriving (Read, Show, Eq)
 
-data Variable = Variable { variableName :: String, variableValueModifier :: ValueModifier }
-  deriving (Read, Show, Eq)
+data Variable = Variable
+  { variableName :: String
+  , variableValueModifier :: ValueModifier
+  } deriving (Read, Show, Eq)
 
 data TemplateSegment
   = Literal String
@@ -99,7 +103,6 @@ data Modifier
   | PathParameter
   | Query
   | QueryContinuation
-  | Alias
   deriving (Read, Show, Eq)
 
 

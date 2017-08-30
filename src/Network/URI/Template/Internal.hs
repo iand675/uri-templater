@@ -69,8 +69,7 @@ processVariable m isFirst (Variable varName varMod) (WrappedValue val) = do
     Explode -> exploded
     (MaxLength l) -> do
       when (modifierSupportsNamed settings) (namePrefix settings varName val)
-      -- TODO: this is wrong. we need to truncate prior to encoding.
-      censor (fromList . take l . Data.DList.toList) unexploded
+      unexploded
   where
     settings = options m
 
@@ -79,27 +78,32 @@ processVariable m isFirst (Variable varName varMod) (WrappedValue val) = do
 
     sepByCommas = sequence_ . intersperse (addChar ',')
 
-    associativeCommas :: (TemplateValue Single, TemplateValue Single) -> StringBuilder ()
-    associativeCommas (Single n, Single v) = addEncodeString n >> addChar ',' >> addEncodeString v
+    associativeCommas :: (String -> String) -> (TemplateValue Single, TemplateValue Single) -> StringBuilder ()
+    associativeCommas f (Single n, Single v) = addEncodeString n >> addChar ',' >> addEncodeString (f v)
+
+    preprocess :: String -> String
+    preprocess = case varMod of
+      MaxLength l -> take l
+      _ -> id
 
     unexploded = case val of
-      (Associative l) -> sepByCommas $ map associativeCommas l
-      (List l) -> sepByCommas $ map (\(Single s) -> addEncodeString s) l
-      (Single s) -> addEncodeString s
+      (Associative l) -> sepByCommas $ map (associativeCommas preprocess) l
+      (List l) -> sepByCommas $ map (\(Single s) -> addEncodeString $ preprocess s) l
+      (Single s) -> addEncodeString $ preprocess s
 
     explodedAssociative :: (TemplateValue Single, TemplateValue Single) -> StringBuilder ()
     explodedAssociative (Single k, Single v) = do
       addEncodeString k
       addChar '='
-      addEncodeString v
-      
+      addEncodeString $ preprocess v
+
     exploded :: StringBuilder ()
     exploded = case val of
       (Single s) -> do
         when (modifierSupportsNamed settings) (namePrefix settings varName val)
-        addEncodeString s
+        addEncodeString $ preprocess s
       (Associative l) -> sequence_ $ intersperse (addChar $ modifierSeparator settings) $ map explodedAssociative l
-      (List l) -> sequence_ $ intersperse (addChar $ modifierSeparator settings) $ map (\(Single s) -> addEncodeString s) l
+      (List l) -> sequence_ $ intersperse (addChar $ modifierSeparator settings) $ map (\(Single s) -> addEncodeString $ preprocess s) l
 
 processVariables :: [(String, WrappedValue)] -> Modifier -> [Variable] -> StringBuilder ()
 processVariables env m vs = sequence_ $ processedVariables

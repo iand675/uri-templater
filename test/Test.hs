@@ -79,6 +79,9 @@ embedTest t expect = test $ do
 var :: TemplateString
 var = "value"
 
+semi :: TemplateString
+semi = ";"
+
 hello :: TemplateString
 hello = "Hello World!"
 
@@ -93,6 +96,10 @@ keys = AList [("semi", ";"), ("dot", "."), ("comma", ",")]
 
 quasiQuoterTests = label "QuasiQuoter Tests" $ suite $ do
   label "Simple" $ test ([uri|{var}|] @?= "value")
+  label "Simple with sufficient length" $ test ([uri|{var:20}|] @?= "value")
+  label "Simple with insufficient length" $ test ([uri|{var:3}|] @?= "val")
+  label "Escape" $ test ([uri|{semi}|] @?= "%3B")
+  label "Escape" $ test ([uri|{semi:2}|] @?= "%3B")
   label "Multiple" $ test ([uri|{var,hello}|] @?= "value,Hello%20World%21")
   label "Length Constraint" $ test ([uri|{var:3}|] @?= "val")
   label "Sufficiently large length constraint" $ test ([uri|{var:10}|] @?= "value")
