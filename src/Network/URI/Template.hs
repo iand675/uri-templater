@@ -10,6 +10,7 @@ module Network.URI.Template (
   , ToTemplateValue(..)
   , AList(..)
   , TemplateString(..)
+  , Buildable(..)
 ) where
 import Network.URI.Template.Internal
 import Network.URI.Template.Parser

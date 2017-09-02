@@ -1,7 +1,8 @@
-{-# LANGUAGE QuasiQuotes, OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes, OverloadedStrings, TypeApplications #-}
 module Main where
 import Control.Arrow
 import Control.Monad.Writer.Strict
+import Data.String
 import Network.URI.Template.Parser
 import Network.URI.Template
 import Network.URI.Template.TH
@@ -35,7 +36,19 @@ main = do
     then exitFailure
     else exitSuccess
   where
-    testRun = runTestRegistry (parserTests >> quasiQuoterTests >> embedTests)
+    strEq = (@?=) @String
+    testRun = runTestRegistry $ do
+      parserTests
+      quasiQuoterTests strEq
+      embedTests
+      label "RFC example cases" $ suite $ do
+        label "unescaped" $ test $ unescaped strEq
+        label "fragment" $ test $ fragment strEq
+        label "label tests" $ test $ labelTests strEq
+        label "path tests" $ test $ pathTests strEq
+        label "path params" $ test $ pathParams strEq
+        label "query params" $ test $ queryParams strEq
+        label "continued query params" $ test $ queryParams strEq
 
 parserTests = label "Parser Tests" $ suite $ do
   let foo = Variable "foo" Normal
@@ -94,7 +107,8 @@ list = ["red", "green", "blue"]
 keys :: AList TemplateString TemplateString
 keys = AList [("semi", ";"), ("dot", "."), ("comma", ",")]
 
-quasiQuoterTests = label "QuasiQuoter Tests" $ suite $ do
+quasiQuoterTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> TestRegistry ()
+quasiQuoterTests (@?=) = label "QuasiQuoter Tests" $ suite $ do
   label "Simple" $ test ([uri|{var}|] @?= "value")
   label "Simple with sufficient length" $ test ([uri|{var:20}|] @?= "value")
   label "Simple with insufficient length" $ test ([uri|{var:3}|] @?= "val")
@@ -106,30 +120,35 @@ quasiQuoterTests = label "QuasiQuoter Tests" $ suite $ do
   label "List" $ test ([uri|{list}|] @?= "red,green,blue")
   label "Explode List" $ test ([uri|{list*}|] @?= "red,green,blue")
   label "Associative List" $ test ([uri|{keys}|] @?= "semi,%3B,dot,.,comma,%2C")
-  label "Explode Associative List" $ test ([uri|{?keys*}|] @?= "?semi=%3B&dot=.&comma=%2C")
+  label "Explode Associative List" $ test ([uri|{keys*}|] @?= "semi=%3B,dot=.,comma=%2C")
+  label "Explode Associative List Query Params" $ test ([uri|{?keys*}|] @?= "?semi=%3B&dot=.&comma=%2C")
 
-unescaped = do
+unescaped :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+unescaped (@?=) = do
   [uri|{+path:6}/here|] @?= "/foo/b/here"
   [uri|{+list}|] @?= "red,green,blue"
-  [uri|{+list}|] @?= "red,green,blue"
+  [uri|{+list*}|] @?= "red,green,blue"
   [uri|{+keys}|] @?= "semi,;,dot,.,comma,,"
-  [uri|{+keys}|] @?= "semi=;,dot=.,comma=,"
+  [uri|{+keys*}|] @?= "semi=;,dot=.,comma=,"
 
-fragment = do
+fragment :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+fragment (@?=) = do
   [uri|{#path:6}/here|] @?= "#/foo/b/here"
   [uri|{#list}|] @?= "#red,green,blue"
   [uri|{#list*}|] @?= "#red,green,blue"
   [uri|{#keys}|] @?= "#semi,;,dot,.,comma,,"
   [uri|{#keys*}|] @?= "#semi=;,dot=.,comma=,"
 
-labelTests = test $ do
+labelTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+labelTests (@?=) = do
   [uri|X{.var:3}|] @?= "X.val"
   [uri|X{.list}|] @?= "X.red,green,blue"
   [uri|X{.list*}|] @?= "X.red.green.blue"
   [uri|X{.keys}|] @?= "X.semi,%3B,dot,.,comma,%2C"
   [uri|X{.keys*}|] @?= "X.semi=%3B.dot=..comma=%2C"
 
-pathTests = test $ do
+pathTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+pathTests (@?=) = do
   [uri|{/var:1,var}|] @?= "/v/value"
   [uri|{/list}|] @?= "/red,green,blue"
   [uri|{/list*}|] @?= "/red/green/blue"
@@ -137,27 +156,26 @@ pathTests = test $ do
   [uri|{/keys}|] @?= "/semi,%3B,dot,.,comma,%2C"
   [uri|{/keys*}|] @?= "/semi=%3B/dot=./comma=%2C"
 
-pathParams = do
+pathParams :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+pathParams (@?=) = do
   [uri|{;hello:5}|] @?= ";hello=Hello"
   [uri|{;list}|] @?= ";list=red,green,blue"
   [uri|{;list*}|] @?= ";list=red;list=green;list=blue"
   [uri|{;keys}|] @?= ";keys=semi,%3B,dot,.,comma,%2C"
   [uri|{;keys*}|] @?= ";semi=%3B;dot=.;comma=%2C"
 
-queryParams = do
-  [uri|{?foo}|] @?= "?foo=1"
-  [uri|{?foo,bar}|] @?= "?foo=1&bar=2"
-  where
-    foo :: Int
-    foo = 1
-    bar :: Int
-    bar = 2
+queryParams :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+queryParams (@?=) = do
+  [uri|{?var:3}|] @?= "?var=val"
+  [uri|{?list}|] @?= "?list=red,green,blue"
+  [uri|{?list*}|] @?= "?list=red&list=green&list=blue"
+  [uri|{?keys}|] @?= "?keys=semi,%3B,dot,.,comma,%2C"
+  [uri|{?keys*}|] @?= "?semi=%3B&dot=.&comma=%2C"
 
-continuedQueryParams = do
-  [uri|{&foo}|] @?= "&foo=1"
-  [uri|{&foo,bar}|] @?= "&foo=1&bar=2"
-  where
-    foo :: Int
-    foo = 1
-    bar :: Int
-    bar = 2
+continuedQueryParams :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+continuedQueryParams (@?=) = do
+  [uri|{&var:3}|] @?= "&var=val"
+  [uri|{&list}|] @?= "&list=red,green,blue"
+  [uri|{&list*}|] @?= "&list=red&list=green&list=blue"
+  [uri|{&keys}|] @?= "&keys=semi,%3B,dot,.,comma,%2C"
+  [uri|{&keys*}|] @?= "&semi=%3B&dot=.&comma=%2C"

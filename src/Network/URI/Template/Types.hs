@@ -1,4 +1,4 @@
-{-# LANGUAGE EmptyDataDecls, GADTs, FunctionalDependencies, MultiParamTypeClasses, FlexibleContexts, TypeSynonymInstances, FlexibleInstances, TypeFamilies, OverlappingInstances, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE EmptyDataDecls, GADTs, FunctionalDependencies, MultiParamTypeClasses, FlexibleContexts, TypeSynonymInstances, FlexibleInstances, TypeFamilies, GeneralizedNewtypeDeriving #-}
 module Network.URI.Template.Types where
 import Control.Arrow
 import Data.Foldable as F
@@ -67,6 +67,10 @@ instance ToTemplateValue T.Text where
 instance ToTemplateValue TL.Text where
   type TemplateRep TL.Text = Single
   toTemplateValue = Single . TL.unpack
+
+instance (ToTemplateValue a, TemplateRep a ~ Single) => ToTemplateValue (Maybe a) where
+  type TemplateRep (Maybe a) = Single
+  toTemplateValue = maybe (Single "") toTemplateValue
 
 instance (ToTemplateValue k, (TemplateRep k) ~ Single, ToTemplateValue v, (TemplateRep v) ~ Single) => ToTemplateValue (HS.HashMap k v) where
   type TemplateRep (HS.HashMap k v) = Associative
