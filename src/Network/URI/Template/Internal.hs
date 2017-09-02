@@ -23,50 +23,53 @@ import Data.Proxy
 import Network.HTTP.Base (urlEncode)
 import Network.URI.Template.Types
 
-class Monoid (StringBuilder a) => Buildable a where
-  type StringBuilder a
-  build :: StringBuilder a -> a
-  addChar :: Proxy a -> Char -> StringBuilder a
-  addString :: Proxy a -> String -> StringBuilder a
+class Monoid (Builder a) => Buildable a where
+  type Builder a
+  -- | Convert the intermediate output into the end result
+  build :: Builder a -> a
+  -- | Construct an appendable character representation
+  addChar :: Proxy a -> Char -> Builder a
+  -- | Construct an appendable string representation
+  addString :: Proxy a -> String -> Builder a
 
 instance Buildable String where
-  type StringBuilder String = DList Char
+  type Builder String = DList Char
   build = Data.DList.toList
   addChar _ = singleton
   addString _ = fromList
 
 instance Buildable BS.ByteString where
-  type StringBuilder BS.ByteString = BB.Builder
+  type Builder BS.ByteString = BB.Builder
   build = BL.toStrict . BB.toLazyByteString
   addChar _ = BB.char8
   addString _ = BB.string8
 
 instance Buildable BL.ByteString where
-  type StringBuilder BL.ByteString = BB.Builder
+  type Builder BL.ByteString = BB.Builder
   build = BB.toLazyByteString
   addChar _ = BB.char8
   addString _ = BB.string8
 
 instance Buildable T.Text where
-  type StringBuilder T.Text = TB.Builder
+  type Builder T.Text = TB.Builder
   build = TL.toStrict . TB.toLazyText
   addChar _ = TB.singleton
   addString _ = TB.fromString
 
 instance Buildable TL.Text where
-  type StringBuilder TL.Text = TB.Builder
+  type Builder TL.Text = TB.Builder
   build = TB.toLazyText
   addChar _ = TB.singleton
   addString _ = TB.fromString
 
 instance Buildable BB.Builder where
-  type StringBuilder BB.Builder = BB.Builder
+  type Builder BB.Builder = BB.Builder
   build = id
   addChar _ = BB.char8
   addString _ = BB.string8
 
 instance Buildable TB.Builder where
-  type StringBuilder TB.Builder = TB.Builder
+  type Builder TB.Builder = TB.Builder
   build = id
   addChar _ = TB.singleton
   addString _ = TB.fromString
@@ -109,7 +112,7 @@ templateValueIsEmpty (List s)        = null s
 
 namePrefix :: forall str a.
               (Buildable str)
-           => Proxy str -> ProcessingOptions -> String -> TemplateValue a -> StringBuilder str
+           => Proxy str -> ProcessingOptions -> String -> TemplateValue a -> Builder str
 namePrefix p opts name val = addString p name <> if templateValueIsEmpty val
   then maybe mempty (addChar p) $ modifierIfEmpty opts
   else addChar p '='
@@ -120,7 +123,7 @@ whenM pred m = if pred then m else mempty
 processVariable
   :: forall str.
      (Buildable str)
-  => Proxy str -> Modifier -> Bool -> Variable -> WrappedValue -> StringBuilder str
+  => Proxy str -> Modifier -> Bool -> Variable -> WrappedValue -> Builder str
 processVariable p m isFirst (Variable varName varMod) (WrappedValue val) =
   let prefix = maybe mempty (addChar p) $ modifierPrefix settings
       separator = addChar p $ modifierSeparator settings
@@ -138,12 +141,12 @@ processVariable p m isFirst (Variable varName varMod) (WrappedValue val) =
   where
     settings = options m
 
-    addEncodeString :: String -> StringBuilder str
+    addEncodeString :: String -> Builder str
     addEncodeString = addString p . (allowEncoder $ modifierAllow settings)
 
     sepByCommas = mconcat . intersperse (addChar p ',')
 
-    associativeCommas :: (String -> String) -> (TemplateValue Single, TemplateValue Single) -> StringBuilder str
+    associativeCommas :: (String -> String) -> (TemplateValue Single, TemplateValue Single) -> Builder str
     associativeCommas f (Single n, Single v) =
       addEncodeString n <>
       addChar p ',' <>
@@ -159,13 +162,13 @@ processVariable p m isFirst (Variable varName varMod) (WrappedValue val) =
       (List l) -> sepByCommas $ map (\(Single s) -> addEncodeString $ preprocess s) l
       (Single s) -> addEncodeString $ preprocess s
 
-    explodedAssociative :: (TemplateValue Single, TemplateValue Single) -> StringBuilder str
+    explodedAssociative :: (TemplateValue Single, TemplateValue Single) -> Builder str
     explodedAssociative (Single k, Single v) =
       addEncodeString k <>
       addChar p '=' <>
       addEncodeString (preprocess v)
 
-    exploded :: StringBuilder str
+    exploded :: Builder str
     exploded = case val of
       (Single s) -> whenM
                     (modifierSupportsNamed settings)
@@ -184,7 +187,7 @@ processVariable p m isFirst (Variable varName varMod) (WrappedValue val) =
 
 processVariables :: forall str.
                     (Buildable str)
-                 => Proxy str -> [(String, WrappedValue)] -> Modifier -> [Variable] -> StringBuilder str
+                 => Proxy str -> [(String, WrappedValue)] -> Modifier -> [Variable] -> Builder str
 processVariables p env m vs = mconcat processedVariables
   where
     findValue (Variable varName _) = lookup varName env
@@ -192,10 +195,10 @@ processVariables p env m vs = mconcat processedVariables
     nonEmptyVariables :: [(Variable, WrappedValue)]
     nonEmptyVariables = catMaybes $ map (\v -> fmap (\mv -> (v, mv)) $ findValue v) vs
 
-    processors :: [Variable -> WrappedValue -> StringBuilder str]
+    processors :: [Variable -> WrappedValue -> Builder str]
     processors = (processVariable p m True) : repeat (processVariable p m False)
 
-    processedVariables :: [StringBuilder str]
+    processedVariables :: [Builder str]
     processedVariables = zipWith uncurry processors nonEmptyVariables
 
 render :: (Buildable str) => UriTemplate -> [BoundValue] -> str
@@ -207,7 +210,7 @@ render' tpl env = build $ mconcat $ map go tpl
     p :: Proxy str
     p = Proxy
 
-    go :: TemplateSegment -> StringBuilder str
+    go :: TemplateSegment -> Builder str
     go (Literal s) = addString p s
     go (Embed m vs) = processVariables p env m vs
 

@@ -46,6 +46,7 @@ quasiEval str = do
     Left err -> fail $ show err
     Right tpl -> templateToExp tpl
 
+-- | URI quasiquoter. Can only be used in expressions, not for top-level declarations
 uri :: QuasiQuoter
 uri = QuasiQuoter
   { quoteExp = quasiEval
