@@ -41,6 +41,7 @@ library
                      uuid-types,
                      time
   hs-source-dirs:    src
+  other-extensions:  TypeApplications
 
 test-suite test-uri-templates
    type:             exitcode-stdio-1.0
