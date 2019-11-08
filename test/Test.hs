@@ -8,11 +8,11 @@ import Network.URI.Template
 import Network.URI.Template.TH
 import Network.URI.Template.Types
 import System.Exit
-import Text.PrettyPrint.ANSI.Leijen (Doc, renderCompact, displayS)
+import Data.Text.Prettyprint.Doc (Doc)
 import Test.HUnit hiding (test, path, Label)
 
 -- Just being lazy here
-instance Eq Doc where
+instance Eq (Doc ann) where
   (==) d1 d2 = show d1 == show d2
 
 type TestRegistry = Writer [Test]

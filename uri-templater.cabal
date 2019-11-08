@@ -32,7 +32,8 @@ library
                      HTTP,
                      dlist,
                      mtl,
-                     ansi-wl-pprint,
+                     prettyprinter,
+                     prettyprinter-ansi-terminal,
                      vector,
                      containers,
                      unordered-containers,
@@ -52,4 +53,4 @@ test-suite test-uri-templates
                      uri-templater,
                      template-haskell,
                      HUnit,
-                     ansi-wl-pprint
+                     prettyprinter
