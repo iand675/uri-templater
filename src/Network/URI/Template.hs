@@ -7,30 +7,33 @@
   This implementation supports outputting these URI fragments to all widely-used textual/bytestring
   formats, and provides basic facilities for extending the URI rendering to support other output formats.
 -}
-
 module Network.URI.Template (
   -- $overview
 
   -- * Quasi-Quoting URI templates
-    uri
+  uri,
+
   -- * Manually parsing, constructing, & writing URI templates
-  , render
-  , ToTemplateValue(..)
-  , AList(..)
-  , TemplateString(..)
-  , parseTemplate
-  , UriTemplate(..)
-  , TemplateSegment(..)
-  , Modifier(..)
-  , ValueModifier(..)
-  , TemplateValue(..)
+  render,
+  ToTemplateValue (..),
+  AList (..),
+  TemplateString (..),
+  parseTemplate,
+  UriTemplate (..),
+  TemplateSegment (..),
+  Modifier (..),
+  ValueModifier (..),
+  TemplateValue (..),
+
   -- * Implementing a new output format for URI templates
-  , Buildable(..)
+  Buildable (..),
 ) where
+
 import Network.URI.Template.Internal
 import Network.URI.Template.Parser
 import Network.URI.Template.TH
 import Network.URI.Template.Types
+
 
 {- $overview
 
@@ -39,27 +42,14 @@ to view an example of each sort of interpolation to see how it works.
 RFC 6570 itself <https://tools.ietf.org/html/rfc6570> also
 provides a large number of these same examples, so it may help to look at it directly.
 
-For these examples, the following values are assumed:
-
-@
-var :: TemplateString
-var = "value"
-
-semi :: TemplateString
-semi = ";"
-
-hello :: TemplateString
-hello = "Hello World!"
-
-path :: TemplateString
-path = "\/foo\/bar"
-
-list :: [TemplateString]
-list = ["red", "green", "blue"]
-
-keys :: AList TemplateString TemplateString
-keys = AList [("semi", ";"), ("dot", "."), ("comma", ",")]
-@
+>>> :set -XQuasiQuotes
+>>> :set -XOverloadedStrings
+>>> let var = "value" :: TemplateString
+>>> let semi = ";" :: TemplateString
+>>> let hello = "Hello World!" :: TemplateString
+>>> let path = "/foo/bar" :: TemplateString
+>>> let list = ["red", "green", "blue"] :: [TemplateString]
+>>> let keys = AList [("semi", ";"), ("dot", "."), ("comma", ",")] :: AList TemplateString TemplateString
 
 = Simple interpolation
 
@@ -74,54 +64,54 @@ separator between variable expansions.
 == Without modifiers
 
 >>> [uri|{var}|]
-value
+"value"
 
 == Interpolating with a length modifier
 
 >>> [uri|{var:3}|]
-val
+"val"
 
 == Interpolating multiple values:
 
 >>> [uri|{var,hello}|]
-value,hello
+"value,Hello%20World%21"
 
 == Interpolating a list:
 
 >>> [uri|{list}|]
-red,green,blue
+"red,green,blue"
 
 == Exploding a list (not super useful without modifiers):
 
 >>> [uri|{list*}|]
-red,green,blue
+"red,green,blue"
 
 == Interpolating associative values:
 
 >>> [uri|{keys}|]
-semi,%3B,dot,.,comma,%2C
+"semi,%3B,dot,.,comma,%2C"
 
 == Exploding associative values
 
 >>> [uri|{keys*}|]
-semi=%3B,dot=.,comma=%2C
+"semi=%3B,dot=.,comma=%2C"
 
 = Unescaped interpolation
 
 >>> [uri|{+path:6}/here|]
-/foo/b/here
+"/foo/b/here"
 
 >>> [uri|{+list}|]
-red,green,blue
+"red,green,blue"
 
 >>> [uri|{+list*}|]
-red,green,blue
+"red,green,blue"
 
->>> [uri|{+keys}]
-semi,;,dot,.,comma,,
+>>> [uri|{+keys}|]
+"semi,;,dot,.,comma,,"
 
->>> [uri|{+keys*}]
-semi=;,dot=.,comma=,
+>>> [uri|{+keys*}|]
+"semi=;,dot=.,comma=,"
 
 = Path piece interpolation
 
@@ -137,47 +127,47 @@ identical to that of label expansion aside from the substitution of
 character and will be percent-encoded if found in a value.
 
 >>> [uri|{/var:1,var}|]
-/v/value
+"/v/value"
 
 >>> [uri|{/list}|]
-/red,green,blue
+"/red,green,blue"
 
->>> [uri|{/list*}]
-/red/green/blue
+>>> [uri|{/list*}|]
+"/red/green/blue"
 
 = Query param interpolation
 
 >>> [uri|{?var:3}|]
-?var=val
+"?var=val"
 
 >>> [uri|{?list}|]
-?list=red,green.blue
+"?list=red,green,blue"
 
 >>> [uri|{?list*}|]
-?list=red&list=green&list=blue
+"?list=red&list=green&list=blue"
 
 >>> [uri|{?keys}|]
-?keys=semi,%3B,dot,.,comma,%2C
+"?keys=semi,%3B,dot,.,comma,%2C"
 
 >>> [uri|{?keys*}|]
-?semi=%3B&dot=.&comma=%2C
+"?semi=%3B&dot=.&comma=%2C"
 
 = Continued query param interpolation
 
 >>> [uri|{?var:3}|]
-&var=val
+"?var=val"
 
 >>> [uri|{?list}|]
-&list=red,green.blue
+"?list=red,green,blue"
 
 >>> [uri|{?list*}|]
-&list=red&list=green&list=blue
+"?list=red&list=green&list=blue"
 
 >>> [uri|{?keys}|]
-&keys=semi,%3B,dot,.,comma,%2C
+"?keys=semi,%3B,dot,.,comma,%2C"
 
 >>> [uri|{?keys*}|]
-&semi=%3B&dot=.&comma=%2C
+"?semi=%3B&dot=.&comma=%2C"
 
 = Label interpolation
 
@@ -185,19 +175,19 @@ Label expansion, as indicated by the dot (".") operator is useful for describing
 domain names or path selectors (e.g., filename extensions).
 
 >>> [uri|X{.var:3}|]
-X.val
+"X.val"
 
 >>> [uri|X{.list}|]
-X.red,green,blue
+"X.red,green,blue"
 
 >>> [uri|X{.list*}|]
-X.red.green.blue
+"X.red.green.blue"
 
 >>> [uri|X{.keys}|]
-X.semi,%3B,dot,.,comma,%2C
+"X.semi,%3B,dot,.,comma,%2C"
 
 >>> [uri|X{.keys*}|]
-X.semi=%3B.dot=..comma=%2C
+"X.semi=%3B.dot=..comma=%2C"
 
 = Fragment interpolation
 
@@ -205,23 +195,19 @@ Path-style parameter expansion, as indicated by the semicolon (";")
 is useful for describing URI path parameters, such as "path;property" or "path;name=value".
 
 >>> [uri|{;hello:5}|]
-;hello=Hello
-
+";hello=Hello"
 
 >>> [uri|{;list}|]
-;list=red,green,blue
-
+";list=red,green,blue"
 
 >>> [uri|{;list*}|]
-;list=red;list=green;list=blue
-
+";list=red;list=green;list=blue"
 
 >>> [uri|{;keys}|]
-;keys=semi,%3B,dot,.,comma,%2C
-
+";keys=semi,%3B,dot,.,comma,%2C"
 
 >>> [uri|{;keys*}|]
-;semi=%3B;dot=.;comma=%2C
+";semi=%3B;dot=.;comma=%2C"
 
 = Security Considerations
 

@@ -24,12 +24,11 @@ library
                      Network.URI.Template.Types,
                      Network.URI.Template.Parser,
                      Network.URI.Template.Internal
-  build-depends:     base <5,
-                     trifecta >=1.6,
+  build-depends:     base >= 4.9 && <5,
+                     trifecta >= 1.6,
                      charset,
                      parsers,
                      template-haskell,
-                     HTTP,
                      dlist,
                      mtl,
                      prettyprinter,
@@ -40,17 +39,30 @@ library
                      text,
                      bytestring,
                      uuid-types,
-                     time
+                     cookie,
+                     tagged,
+                     time,
+                     time-compat,
+                     http-types,
+                     http-api-data >= 0.4.3
   hs-source-dirs:    src
-  other-extensions:  TypeApplications
 
 test-suite test-uri-templates
-   type:             exitcode-stdio-1.0
-   main-is:          Test.hs
-   hs-source-dirs:   test
-   build-depends:    base,
+  type:              exitcode-stdio-1.0
+  main-is:           Test.hs
+  hs-source-dirs:    test
+  build-depends:     base,
                      mtl,
                      uri-templater,
+                     text,
                      template-haskell,
                      HUnit,
                      prettyprinter
+
+test-suite doctests
+  type:              exitcode-stdio-1.0
+  ghc-options:       -threaded
+  main-is:           Doctests.hs
+  hs-source-dirs:    test
+  build-depends:     base,
+                     doctest >= 0.8
