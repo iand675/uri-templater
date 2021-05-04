@@ -5,7 +5,8 @@ import Data.List
 import Data.Monoid
 import Text.Trifecta
 import Text.Parser.Char
-import Text.PrettyPrint.ANSI.Leijen (Doc)
+import Data.Text.Prettyprint.Doc (Doc)
+import Data.Text.Prettyprint.Doc.Render.Terminal (AnsiStyle)
 import Network.URI.Template.Types
 
 range :: Char -> Char -> Parser Char
@@ -98,7 +99,7 @@ embed = between (char '{') (char '}') variables
 uriTemplate :: Parser UriTemplate
 uriTemplate = spaces *> many (literal <|> embed)
 
-parseTemplate :: String -> Either Doc UriTemplate
+parseTemplate :: String -> Either (Doc AnsiStyle) UriTemplate
 parseTemplate t =
   case parseString uriTemplate mempty t of
     Failure err -> Left (_errDoc err)
