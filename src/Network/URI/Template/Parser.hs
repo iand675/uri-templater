@@ -1,5 +1,7 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 module Network.URI.Template.Parser (
   parseTemplate,
@@ -7,6 +9,7 @@ module Network.URI.Template.Parser (
 
 import qualified Data.ByteString as BS
 import qualified Data.Char as C
+import qualified Data.String as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Data.Text.Prettyprint.Doc (Doc, pretty)
@@ -150,8 +153,8 @@ embed :: Parser e TemplateSegment
 embed = $(char '{') *> variables <* $(char '}')
 
 
--- | Parse a URI template
-uriTemplate :: Parser e UriTemplate
+-- | Parse a URI template segments
+uriTemplate :: Parser e [TemplateSegment]
 uriTemplate = ws *> many (literal <|> embed)
 
 
@@ -167,6 +170,23 @@ sepBy1 p sep = do
 parseTemplate :: String -> Either (Doc AnsiStyle) UriTemplate
 parseTemplate input =
   case runParser uriTemplate (TE.encodeUtf8 $ T.pack input) of
-    OK result _ -> Right result
+    OK result _ -> Right (UriTemplate result)
     Err _ -> Left (pretty ("Parse error in URI template: " ++ input))
     Fail -> Left (pretty ("Parse error in URI template: " ++ input))
+
+
+{- | 'IsString' instance for 'UriTemplate' allows using string literals directly as templates
+when @OverloadedStrings@ is enabled.
+
+>>> :set -XOverloadedStrings
+>>> let template = "/users/{userId}" :: UriTemplate
+>>> renderTemplate template
+"/users/{userId}"
+
+Note: If the string fails to parse as a valid URI template, this will call 'error'.
+For fallible parsing, use 'parseTemplate' instead.
+-}
+instance S.IsString UriTemplate where
+  fromString s = case parseTemplate s of
+    Right template -> template
+    Left err -> error $ "Invalid URI template: " ++ s ++ "\n" ++ show err

@@ -277,7 +277,7 @@ render = render'
 
 
 render' :: forall str. (Buildable str) => UriTemplate -> [BoundValue] -> str
-render' tpl env = build $ mconcat $ map go tpl
+render' (UriTemplate tpl) env = build $ mconcat $ map go tpl
  where
   p :: Proxy str
   p = Proxy

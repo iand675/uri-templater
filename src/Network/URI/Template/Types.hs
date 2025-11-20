@@ -539,13 +539,48 @@ data TemplateSegment
     Literal T.Text
   | -- | An interpolation can have multiple variables (separated by commas in the textual format)
     Embed Modifier [Variable]
-  deriving (Read, Show, Eq)
+  deriving (Read, Eq)
+
+
+instance Show TemplateSegment where
+  show (Literal t) = T.unpack t
+  show (Embed mod vars) = "{" ++ modifierPrefix mod ++ intercalate "," (map showVariable vars) ++ "}"
+    where
+      showVariable (Variable name valueMod) = T.unpack name ++ showValueModifier valueMod
+      showValueModifier Normal = ""
+      showValueModifier Explode = "*"
+      showValueModifier (MaxLength n) = ":" ++ show n
+      modifierPrefix Simple = ""
+      modifierPrefix Reserved = "+"
+      modifierPrefix Fragment = "#"
+      modifierPrefix Label = "."
+      modifierPrefix PathSegment = "/"
+      modifierPrefix PathParameter = ";"
+      modifierPrefix Query = "?"
+      modifierPrefix QueryContinuation = "&"
 
 
 {- | A URI template is fundamentally a bunch of segments that are either constants
  or else an interpolation
 -}
-type UriTemplate = [TemplateSegment]
+newtype UriTemplate = UriTemplate
+  { uriTemplateSegments :: [TemplateSegment]
+  }
+  deriving (Read, Eq)
+
+
+instance Show UriTemplate where
+  show = renderTemplate
+
+
+-- | Render a 'UriTemplate' back to its RFC 6570 string representation.
+--
+-- This is useful for debugging, logging, or storing templates as strings.
+--
+-- >>> renderTemplate (UriTemplate [Literal "http://example.com/", Embed PathSegment [Variable "path" Normal]])
+-- "http://example.com/{/path}"
+renderTemplate :: UriTemplate -> String
+renderTemplate = concatMap show . uriTemplateSegments
 
 
 -- | How an interpolated value should be rendered
