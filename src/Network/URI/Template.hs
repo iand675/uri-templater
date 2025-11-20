@@ -16,6 +16,8 @@ module Network.URI.Template (
   -- * Manually parsing, constructing, & writing URI templates
   render,
   ToTemplateValue (..),
+  ViaHttpApiData (..),
+  WrappedValue (..),
   AList (..),
   TemplateString (..),
   parseTemplate,

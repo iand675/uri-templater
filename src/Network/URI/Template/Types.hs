@@ -1,4 +1,5 @@
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -124,6 +125,30 @@ class ToTemplateValue a where
   toTemplateValue :: a -> TemplateValue (TemplateRep a)
   default toTemplateValue :: (ToHttpApiData a, TemplateRep a ~ Single) => a -> TemplateValue (TemplateRep a)
   toTemplateValue = Single
+
+
+{- | A newtype wrapper for deriving 'ToTemplateValue' instances via 'ToHttpApiData'.
+
+This allows you to easily derive 'ToTemplateValue' instances for your custom types
+that already have a 'ToHttpApiData' instance using @DerivingVia@.
+
+Example usage:
+
+@
+newtype MyId = MyId Int
+  deriving (ToHttpApiData) via Int
+  deriving (ToTemplateValue) via (ViaHttpApiData MyId)
+@
+
+The derived instance will use the 'ToHttpApiData' instance to convert the value
+to a 'Single' template value.
+-}
+newtype ViaHttpApiData a = ViaHttpApiData a
+
+
+instance (ToHttpApiData a) => ToTemplateValue (ViaHttpApiData a) where
+  type TemplateRep (ViaHttpApiData a) = Single
+  toTemplateValue (ViaHttpApiData a) = Single a
 
 
 instance ToTemplateValue Bool
@@ -564,7 +589,7 @@ instance Show TemplateSegment where
  or else an interpolation
 -}
 newtype UriTemplate = UriTemplate
-  { uriTemplateSegments :: [TemplateSegment]
+  { uriTemplateSegments :: V.Vector TemplateSegment
   }
   deriving (Read, Eq)
 
@@ -577,10 +602,11 @@ instance Show UriTemplate where
 --
 -- This is useful for debugging, logging, or storing templates as strings.
 --
--- >>> renderTemplate (UriTemplate [Literal "http://example.com/", Embed PathSegment [Variable "path" Normal]])
+-- >>> import qualified Data.Vector as V
+-- >>> renderTemplate (UriTemplate (V.fromList [Literal "http://example.com/", Embed PathSegment [Variable "path" Normal]]))
 -- "http://example.com/{/path}"
 renderTemplate :: UriTemplate -> String
-renderTemplate = concatMap show . uriTemplateSegments
+renderTemplate = V.foldMap show . uriTemplateSegments
 
 
 -- | How an interpolated value should be rendered
