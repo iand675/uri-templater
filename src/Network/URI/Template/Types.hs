@@ -15,6 +15,7 @@ module Network.URI.Template.Types where
 
 import Control.Arrow (Arrow ((***)))
 import Data.Bifunctor (Bifunctor (bimap))
+import Data.Kind (Type)
 import Data.Fixed (Fixed, HasResolution)
 import Data.Foldable as F (Foldable (toList))
 import Data.Functor.Const (Const)
@@ -27,7 +28,7 @@ import qualified Data.Map.Strict as MS
 import Data.Monoid (All, Any, Dual, First, Last, Product, Sum)
 import Data.Semigroup (Max, Min)
 import qualified Data.String as S
-import Data.Tagged (Tagged)
+import Data.Tagged (Tagged, unTagged)
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
 import Data.Time (
@@ -118,7 +119,7 @@ instance Bifunctor AList where
 
 
 class ToTemplateValue a where
-  type TemplateRep a :: *
+  type TemplateRep a :: Type
   type TemplateRep a = Single
   toTemplateValue :: a -> TemplateValue (TemplateRep a)
   default toTemplateValue :: (ToHttpApiData a, TemplateRep a ~ Single) => a -> TemplateValue (TemplateRep a)
@@ -240,7 +241,8 @@ instance (ToTemplateValue a, TemplateRep a ~ Single, ToHttpApiData a, HasResolut
 instance (ToTemplateValue a, TemplateRep a ~ Single, ToHttpApiData a) => ToTemplateValue (Const a b)
 
 
-instance (ToTemplateValue a, TemplateRep a ~ Single, ToHttpApiData a) => ToTemplateValue (Tagged b a)
+instance (ToTemplateValue a, TemplateRep a ~ Single, ToHttpApiData a) => ToTemplateValue (Tagged b a) where
+  toTemplateValue = toTemplateValue . unTagged
 
 
 instance ToTemplateValue ZonedTime

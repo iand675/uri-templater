@@ -42,8 +42,10 @@ to view an example of each sort of interpolation to see how it works.
 RFC 6570 itself <https://tools.ietf.org/html/rfc6570> also
 provides a large number of these same examples, so it may help to look at it directly.
 
+$setup
 >>> :set -XQuasiQuotes
 >>> :set -XOverloadedStrings
+>>> import Network.URI.Template
 >>> let var = "value" :: TemplateString
 >>> let semi = ";" :: TemplateString
 >>> let hello = "Hello World!" :: TemplateString
