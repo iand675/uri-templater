@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Main where
 
@@ -8,7 +9,9 @@ import Control.Arrow
 import Control.Monad.Writer.Strict
 import qualified Data.String as S
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Text.Prettyprint.Doc (Doc)
+import qualified Data.Vector as V
 import Network.URI.Template
 import Network.URI.Template.Parser
 import Network.URI.Template.TH
@@ -55,6 +58,7 @@ main = do
     showInstanceTests
     isStringInstanceTests
     quasiQuoterTests strEq
+    quasiQuoterPatternTests
     embedTests
     label "RFC 6570 Core Examples" $
       suite $ do
@@ -102,7 +106,7 @@ parserTests = label "Parser Tests" $
 
 
 parserTest :: String -> TemplateSegment -> TestRegistry ()
-parserTest t e = test $ parseTemplate t @?= Right (UriTemplate [e])
+parserTest t e = test $ parseTemplate t @?= Right (UriTemplate (V.singleton e))
 
 
 showInstanceTests :: TestRegistry ()
@@ -151,13 +155,13 @@ showInstanceTests = label "Show Instance Tests" $
       show (Embed Query [Variable "filter" Explode, Variable "sort" Normal]) @?= "{?filter*,sort}"
 
     label "renderTemplate full templates" $ test $ do
-      let template1 = UriTemplate [Literal "/users/", Embed Simple [Variable "userId" Normal]]
+      let template1 = UriTemplate (V.fromList [Literal "/users/", Embed Simple [Variable "userId" Normal]])
       renderTemplate template1 @?= "/users/{userId}"
 
-      let template2 = UriTemplate [Literal "/api", Embed Query [Variable "page" Normal], Embed QueryContinuation [Variable "limit" Normal]]
+      let template2 = UriTemplate (V.fromList [Literal "/api", Embed Query [Variable "page" Normal], Embed QueryContinuation [Variable "limit" Normal]])
       renderTemplate template2 @?= "/api{?page}{&limit}"
 
-      let template3 = UriTemplate [Embed PathSegment [Variable "path" Explode], Literal "/file.txt"]
+      let template3 = UriTemplate (V.fromList [Embed PathSegment [Variable "path" Explode], Literal "/file.txt"])
       renderTemplate template3 @?= "{/path*}/file.txt"
 
     label "Round-trip: parse then show" $ test $ do
@@ -617,3 +621,220 @@ prefixModifierTests (@?=) = do
   [uri|{;hello:5}|] @?= ";hello=Hello"
   [uri|{?var:3}|] @?= "?var=val"
   [uri|{&var:3}|] @?= "&var=val"
+
+-- Test quasiquoter pattern matching
+quasiQuoterPatternTests :: TestRegistry ()
+quasiQuoterPatternTests = label "QuasiQuoter Pattern Tests" $
+  suite $ do
+    label "Simple literal pattern match" $ test $ do
+      let tpl = parseTemplate "/static/path"
+      case tpl of
+        Right [uri|/static/path|] -> return ()
+        _ -> assertFailure "Pattern should match /static/path"
+
+    label "Simple variable pattern match and binding" $ test $ do
+      let tpl = parseTemplate "{userId}"
+      case tpl of
+        Right [uri|{userId}|] -> do
+          -- userId is now bound to "userId" :: Text
+          userId @?= "userId"
+        _ -> assertFailure "Pattern should match {userId}"
+
+    label "Complex pattern match with multiple bindings" $ test $ do
+      let tpl = parseTemplate "/users/{userId}/posts/{postId}"
+      case tpl of
+        Right [uri|/users/{userId}/posts/{postId}|] -> do
+          -- Both variables are bound
+          userId @?= "userId"
+          postId @?= "postId"
+        _ -> assertFailure "Pattern should match complex template"
+
+    label "Pattern with modifiers binds variables" $ test $ do
+      let tpl = parseTemplate "{+path}{?query*}{#fragment}"
+      case tpl of
+        Right [uri|{+path}{?query*}{#fragment}|] -> do
+          path @?= "path"
+          query @?= "query"
+          fragment @?= "fragment"
+        _ -> assertFailure "Pattern should match template with modifiers"
+
+    label "Pattern with max length binds variable" $ test $ do
+      let tpl = parseTemplate "{var:3}"
+      case tpl of
+        Right [uri|{var:3}|] -> do
+          var @?= "var"
+        _ -> assertFailure "Pattern should match template with max length"
+
+    label "Pattern should not match different template" $ test $ do
+      let tpl = parseTemplate "/users/{userId}"
+      case tpl of
+        Right [uri|/posts/{postId}|] -> assertFailure "Pattern should not match different template"
+        Right _ -> return ()
+        Left _ -> assertFailure "Parse should succeed"
+
+    label "Multiple variables with same modifier" $ test $ do
+      let tpl = parseTemplate "{x,y,z}"
+      case tpl of
+        Right [uri|{x,y,z}|] -> do
+          x @?= "x"
+          y @?= "y"
+          z @?= "z"
+        _ -> assertFailure "Should match and bind all three variables"
+
+    label "Binding with mixed literal and variable segments" $ test $ do
+      let tpl = parseTemplate "/api/v1/users/{userId}/posts/{postId}/comments"
+      case tpl of
+        Right [uri|/api/v1/users/{userId}/posts/{postId}/comments|] -> do
+          userId @?= "userId"
+          postId @?= "postId"
+        _ -> assertFailure "Should match complex template with mixed segments"
+
+    label "Binding variables with all modifier types" $ test $ do
+      let tpl = parseTemplate "{simple}{+reserved}{#fragment}{.label}{/path}{;param}{?query}{&cont}"
+      case tpl of
+        Right [uri|{simple}{+reserved}{#fragment}{.label}{/path}{;param}{?query}{&cont}|] -> do
+          simple @?= "simple"
+          reserved @?= "reserved"
+          fragment @?= "fragment"
+          label @?= "label"
+          path @?= "path"
+          param @?= "param"
+          query @?= "query"
+          cont @?= "cont"
+        _ -> assertFailure "Should bind variables with all modifier types"
+
+    label "Binding with explode modifier on different operators" $ test $ do
+      let tpl = parseTemplate "{list1*}{+list2*}{#list3*}{.list4*}{/list5*}{;list6*}{?list7*}{&list8*}"
+      case tpl of
+        Right [uri|{list1*}{+list2*}{#list3*}{.list4*}{/list5*}{;list6*}{?list7*}{&list8*}|] -> do
+          list1 @?= "list1"
+          list2 @?= "list2"
+          list3 @?= "list3"
+          list4 @?= "list4"
+          list5 @?= "list5"
+          list6 @?= "list6"
+          list7 @?= "list7"
+          list8 @?= "list8"
+        _ -> assertFailure "Should bind exploded variables"
+
+    label "Binding with length constraints" $ test $ do
+      let tpl = parseTemplate "{short:3}{medium:10}{long:100}"
+      case tpl of
+        Right [uri|{short:3}{medium:10}{long:100}|] -> do
+          short @?= "short"
+          medium @?= "medium"
+          long @?= "long"
+        _ -> assertFailure "Should bind variables with length constraints"
+
+    label "Multiple variables in single expression with different modifiers" $ test $ do
+      let tpl = parseTemplate "{a,b:5,c*}"
+      case tpl of
+        Right [uri|{a,b:5,c*}|] -> do
+          a @?= "a"
+          b @?= "b"
+          c @?= "c"
+        _ -> assertFailure "Should bind all variables despite different modifiers"
+
+    label "Binding preserves variable name exactly" $ test $ do
+      let tpl = parseTemplate "{userId123}{user_id}{camelCase}"
+      case tpl of
+        Right [uri|{userId123}{user_id}{camelCase}|] -> do
+          userId123 @?= "userId123"
+          user_id @?= "user_id"
+          camelCase @?= "camelCase"
+        _ -> assertFailure "Should preserve exact variable names"
+
+    label "Pattern with only literals (no variables)" $ test $ do
+      let tpl = parseTemplate "/static/path/to/resource"
+      case tpl of
+        Right [uri|/static/path/to/resource|] -> return ()
+        _ -> assertFailure "Should match literal-only template"
+
+    label "Empty template pattern" $ test $ do
+      let tpl = parseTemplate ""
+      case tpl of
+        Right [uri||] -> return ()
+        _ -> assertFailure "Should match empty template"
+
+    label "Pattern with repeated variable names causes conflict (documented limitation)" $ test $ do
+      -- Note: This test documents that repeated variable names in a single pattern
+      -- will cause a compile error due to conflicting definitions. This is expected
+      -- Haskell behavior for pattern matching.
+      let tpl = parseTemplate "{id1}/{id2}"
+      case tpl of
+        Right [uri|{id1}/{id2}|] -> do
+          id1 @?= "id1"
+          id2 @?= "id2"
+        _ -> assertFailure "Should bind unique variable names"
+
+    label "Complex real-world API pattern" $ test $ do
+      let tpl = parseTemplate "/api/v2/organizations/{orgId}/projects/{projectId}/issues{?status,assignee,page,limit}"
+      case tpl of
+        Right [uri|/api/v2/organizations/{orgId}/projects/{projectId}/issues{?status,assignee,page,limit}|] -> do
+          orgId @?= "orgId"
+          projectId @?= "projectId"
+          status @?= "status"
+          assignee @?= "assignee"
+          page @?= "page"
+          limit @?= "limit"
+        _ -> assertFailure "Should handle complex real-world template"
+
+    label "Pattern match failure doesn't bind variables" $ test $ do
+      let tpl = parseTemplate "/users/{userId}"
+      let result = case tpl of
+            Right [uri|/posts/{postId}|] -> Just "matched"
+            Right _ -> Nothing
+            Left _ -> Nothing
+      result @?= Nothing
+
+    label "Nested pattern matching" $ test $ do
+      let tpl1 = parseTemplate "/users/{userId}"
+      let tpl2 = parseTemplate "/posts/{postId}"
+      case (tpl1, tpl2) of
+        (Right [uri|/users/{userId}|], Right [uri|/posts/{postId}|]) -> do
+          userId @?= "userId"
+          postId @?= "postId"
+        _ -> assertFailure "Should handle nested pattern matches"
+
+    label "Pattern with percent-encoded literals" $ test $ do
+      let tpl = parseTemplate "/path%20with%20spaces/{var}"
+      case tpl of
+        Right [uri|/path%20with%20spaces/{var}|] -> do
+          var @?= "var"
+        _ -> assertFailure "Should handle percent-encoded literals"
+
+    label "Variable bindings are type Text" $ test $ do
+      let tpl = parseTemplate "{userId}"
+      case tpl of
+        Right [uri|{userId}|] -> do
+          -- Verify it's Text by using Text operations
+          let _ = T.length userId
+          let _ = T.toUpper userId
+          userId @?= "userId"
+        _ -> assertFailure "Variables should be Text type"
+
+    label "Multiple query parameters with continuation" $ test $ do
+      let tpl = parseTemplate "/search{?q,kind,sort}{&page,limit}"
+      case tpl of
+        Right [uri|/search{?q,kind,sort}{&page,limit}|] -> do
+          q @?= "q"
+          kind @?= "kind"  -- Changed from 'type' which is a keyword
+          sort @?= "sort"
+          page @?= "page"
+          limit @?= "limit"
+        _ -> assertFailure "Should handle query parameters with continuation"
+
+    label "Guards can use bound variables" $ test $ do
+      let tpl = parseTemplate "/api/{version}/users"
+      let result = case tpl of
+            Right [uri|/api/{version}/users|] | version == "version" -> True
+            _ -> False
+      result @?= True
+
+    label "Pattern matching in function arguments" $ test $ do
+      let checkTemplate [uri|/users/{userId}|] = userId
+          checkTemplate _ = "no match"
+      case parseTemplate "/users/{userId}" of
+        Right tpl -> checkTemplate tpl @?= "userId"
+        Left _ -> assertFailure "Parse should succeed"
+

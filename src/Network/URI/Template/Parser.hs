@@ -12,6 +12,7 @@ import qualified Data.Char as C
 import qualified Data.String as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
+import qualified Data.Vector as V
 import Data.Text.Prettyprint.Doc (Doc, pretty)
 import Data.Text.Prettyprint.Doc.Render.Terminal (AnsiStyle)
 import FlatParse.Basic
@@ -154,8 +155,8 @@ embed = $(char '{') *> variables <* $(char '}')
 
 
 -- | Parse a URI template segments
-uriTemplate :: Parser e [TemplateSegment]
-uriTemplate = ws *> many (literal <|> embed)
+uriTemplate :: Parser e (V.Vector TemplateSegment)
+uriTemplate = V.fromList <$> (ws *> many (literal <|> embed))
 
 
 -- | Helper to separate a parser by a separator
