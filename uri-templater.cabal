@@ -25,9 +25,7 @@ library
                      Network.URI.Template.Parser,
                      Network.URI.Template.Internal
   build-depends:     base >= 4.9 && <5,
-                     trifecta >= 1.6,
-                     charset,
-                     parsers,
+                     flatparse >= 0.5,
                      template-haskell,
                      dlist,
                      mtl,

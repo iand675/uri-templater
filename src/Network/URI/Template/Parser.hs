@@ -1,31 +1,35 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+
 module Network.URI.Template.Parser (
   parseTemplate,
 ) where
 
-import Control.Applicative
-import Data.Char
-import Data.Functor (($>))
-import Data.List
-import Data.Monoid
+import qualified Data.ByteString as BS
+import qualified Data.Char as C
 import qualified Data.Text as T
-import Data.Text.Prettyprint.Doc (Doc)
+import qualified Data.Text.Encoding as TE
+import Data.Text.Prettyprint.Doc (Doc, pretty)
 import Data.Text.Prettyprint.Doc.Render.Terminal (AnsiStyle)
+import FlatParse.Basic
 import Network.URI.Template.Types
-import Text.Parser.Char
-import Text.Trifecta
 
 
-range :: Char -> Char -> Parser Char
-range l r = satisfy (\c -> l <= c && c <= r)
+-- | Parse a character in a specific range
+charRange :: Char -> Char -> Parser e Char
+charRange l r = satisfy (\c -> l <= c && c <= r)
 
 
-ranges :: [(Char, Char)] -> Parser Char
-ranges = choice . map (uncurry range)
+-- | Parse a character matching any of the given ranges
+charRanges :: [(Char, Char)] -> Parser e Char
+charRanges [] = empty
+charRanges ((l, r) : rest) = satisfy (\c -> l <= c && c <= r) <|> charRanges rest
 
 
-ucschar :: Parser Char
+-- | Parse Unicode characters as specified in RFC 6570
+ucschar :: Parser e Char
 ucschar =
-  ranges
+  charRanges
     [ ('\xA0', '\xD7FF')
     , ('\xF900', '\xFDCF')
     , ('\xFDF0', '\xFFEF')
@@ -46,87 +50,123 @@ ucschar =
     ]
 
 
-iprivate :: Parser Char
+-- | Parse private use area characters
+iprivate :: Parser e Char
 iprivate =
-  ranges
+  charRanges
     [ ('\xE000', '\xF8FF')
     , ('\xF0000', '\xFFFFD')
     , ('\x100000', '\x10FFFD')
     ]
 
 
-pctEncoded :: Parser String
+-- | Parse a percent-encoded sequence
+pctEncoded :: Parser e String
 pctEncoded = do
-  h <- char '%'
+  $(char '%')
   d1 <- hexDigit
   d2 <- hexDigit
-  return [h, d1, d2]
+  return ['%', d1, d2]
+ where
+  hexDigit = satisfy (\c -> C.isDigit c || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 
 
-literalChar :: Parser Char
+-- | Parse a literal character
+literalChar :: Parser e Char
 literalChar =
-  choice
-    ( map
-        char
-        ['\x21', '\x23', '\x24', '\x26', '\x3D', '\x5D', '\x5F', '\x7E']
-    )
-    <|> ranges [('\x28', '\x3B'), ('\x3F', '\x5B'), ('\x61', '\x7A')]
+  ($(char '\x21') >> pure '\x21')
+    <|> ($(char '\x23') >> pure '\x23')
+    <|> ($(char '\x24') >> pure '\x24')
+    <|> ($(char '\x26') >> pure '\x26')
+    <|> ($(char '\x3D') >> pure '\x3D')
+    <|> ($(char '\x5D') >> pure '\x5D')
+    <|> ($(char '\x5F') >> pure '\x5F')
+    <|> ($(char '\x7E') >> pure '\x7E')
+    <|> charRanges [('\x28', '\x3B'), ('\x3F', '\x5B'), ('\x61', '\x7A')]
     <|> ucschar
     <|> iprivate
 
 
-literal :: Parser TemplateSegment
-literal = Literal . T.pack . concat <$> some ((pure <$> literalChar) <|> pctEncoded)
+-- | Parse a literal segment
+literal :: Parser e TemplateSegment
+literal = do
+  chunks <- some ((pure <$> literalChar) <|> pctEncoded)
+  return $ Literal (T.pack $ concat chunks)
 
 
-variables :: Parser TemplateSegment
-variables = Embed <$> modifier <*> sepBy1 variable (spaces *> char ',' *> spaces)
+-- | Parse variables in an embed
+variables :: Parser e TemplateSegment
+variables = do
+  mod <- modifier
+  vars <- sepBy1 variable (ws *> $(char ',') *> ws)
+  return $ Embed mod vars
 
 
-means :: Parser a -> b -> Parser b
-means p v = p $> v
+-- | Parse optional whitespace
+ws :: Parser e ()
+ws = skipMany ($(char ' ') <|> $(char '\t') <|> $(char '\n') <|> $(char '\r'))
 
 
-charMeans :: Char -> b -> Parser b
-charMeans = means . char
+-- | Parse a modifier character
+modifier :: Parser e Modifier
+modifier =
+  ($(char '+') *> pure Reserved)
+    <|> ($(char '#') *> pure Fragment)
+    <|> ($(char '.') *> pure Label)
+    <|> ($(char '/') *> pure PathSegment)
+    <|> ($(char ';') *> pure PathParameter)
+    <|> ($(char '?') *> pure Query)
+    <|> ($(char '&') *> pure QueryContinuation)
+    <|> ($(char '=') *> pure Reserved)
+    <|> ($(char '@') *> pure Reserved)
+    <|> ($(char '!') *> pure Reserved)
+    <|> ($(char '|') *> pure Reserved)
+    <|> pure Simple
 
 
-modifier :: Parser Modifier
-modifier = choice (map (uncurry charMeans) modifiers) <|> pure Simple
+-- | Parse a variable
+variable :: Parser e Variable
+variable = do
+  nm <- name
+  valMod <- valueModifier
+  return $ Variable nm valMod
  where
-  modifiers =
-    [ ('+', Reserved)
-    , ('#', Fragment)
-    , ('.', Label)
-    , ('/', PathSegment)
-    , (';', PathParameter)
-    , ('?', Query)
-    , ('&', QueryContinuation)
-    , ('=', Reserved)
-    , ('@', Reserved)
-    , ('!', Reserved)
-    , ('|', Reserved)
-    ]
+  name = do
+    chunks <- some ((pure <$> alphaNum) <|> ($(char '_') >> pure "_") <|> pctEncoded)
+    return $ T.pack $ concat chunks
+  valueModifier =
+    ($(char '*') *> pure Explode)
+      <|> ($(char ':') *> (MaxLength <$> parseInt))
+      <|> pure Normal
+  parseInt = do
+    digits <- some digit
+    return $ read digits
+  alphaNum = satisfy (\c -> C.isAlphaNum c)
+  digit = satisfy C.isDigit
 
 
-variable :: Parser Variable
-variable = Variable <$> name <*> valueModifier
- where
-  name = T.pack . concat <$> some ((pure <$> (alphaNum <|> char '_')) <|> pctEncoded)
-  valueModifier = charMeans '*' Explode <|> (MaxLength <$> (char ':' *> parseInt)) <|> pure Normal
-  parseInt = read <$> some digit
+-- | Parse an embedded variable expression
+embed :: Parser e TemplateSegment
+embed = $(char '{') *> variables <* $(char '}')
 
 
-embed :: Parser TemplateSegment
-embed = between (char '{') (char '}') variables
+-- | Parse a URI template
+uriTemplate :: Parser e UriTemplate
+uriTemplate = ws *> many (literal <|> embed)
 
 
-uriTemplate :: Parser UriTemplate
-uriTemplate = spaces *> many (literal <|> embed)
+-- | Helper to separate a parser by a separator
+sepBy1 :: Parser e a -> Parser e sep -> Parser e [a]
+sepBy1 p sep = do
+  first <- p
+  rest <- many (sep *> p)
+  return (first : rest)
 
 
+-- | Parse a template from a String
 parseTemplate :: String -> Either (Doc AnsiStyle) UriTemplate
-parseTemplate t =
-  case parseString uriTemplate mempty t of
-    Failure err -> Left (_errDoc err)
-    Success r -> Right r
+parseTemplate input =
+  case runParser uriTemplate (TE.encodeUtf8 $ T.pack input) of
+    OK result _ -> Right result
+    Err _ -> Left (pretty ("Parse error in URI template: " ++ input))
+    Fail -> Left (pretty ("Parse error in URI template: " ++ input))
