@@ -14,7 +14,7 @@ import Network.URI.Template.Types
 
 
 variableNames :: UriTemplate -> [T.Text]
-variableNames = nub . foldr go []
+variableNames (UriTemplate segments) = nub . foldr go [] $ segments
  where
   go (Literal _) l = l
   go (Embed m vs) l = map variableName vs ++ l
@@ -37,10 +37,10 @@ segmentToExpr (Embed m vs) = appE (appE (conE 'Embed) modifier) $ listE $ map va
 
 
 templateToExp :: UriTemplate -> Q Exp
-templateToExp ts = [|render' $(listE $ map segmentToExpr ts) $(templateValues)|]
+templateToExp tpl@(UriTemplate segments) = [|render' (UriTemplate $(listE $ map segmentToExpr segments)) $(templateValues)|]
  where
   templateValues = listE $ map makePair vns
-  vns = variableNames ts
+  vns = variableNames tpl
   makePair str = [|($(litE $ StringL $ T.unpack str), WrappedValue $ toTemplateValue $(varE $ mkName $ T.unpack str))|]
 
 

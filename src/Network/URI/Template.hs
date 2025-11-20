@@ -19,6 +19,7 @@ module Network.URI.Template (
   AList (..),
   TemplateString (..),
   parseTemplate,
+  renderTemplate,
   UriTemplate (..),
   TemplateSegment (..),
   Modifier (..),

@@ -6,7 +6,7 @@ module Main where
 
 import Control.Arrow
 import Control.Monad.Writer.Strict
-import Data.String
+import qualified Data.String as S
 import Data.Text (Text)
 import Data.Text.Prettyprint.Doc (Doc)
 import Network.URI.Template
@@ -52,6 +52,8 @@ main = do
   strEq = (@?=) :: Text -> Text -> Assertion
   testRun = runTestRegistry $ do
     parserTests
+    showInstanceTests
+    isStringInstanceTests
     quasiQuoterTests strEq
     embedTests
     label "RFC 6570 Core Examples" $
@@ -100,7 +102,117 @@ parserTests = label "Parser Tests" $
 
 
 parserTest :: String -> TemplateSegment -> TestRegistry ()
-parserTest t e = test $ parseTemplate t @?= Right [e]
+parserTest t e = test $ parseTemplate t @?= Right (UriTemplate [e])
+
+
+showInstanceTests :: TestRegistry ()
+showInstanceTests = label "Show Instance Tests" $
+  suite $ do
+    label "Literal segments" $ test $ do
+      show (Literal "foo") @?= "foo"
+      show (Literal "/users/") @?= "/users/"
+
+    label "Simple expansion" $ test $
+      show (Embed Simple [Variable "var" Normal]) @?= "{var}"
+
+    label "Reserved expansion" $ test $
+      show (Embed Reserved [Variable "path" Normal]) @?= "{+path}"
+
+    label "Fragment expansion" $ test $
+      show (Embed Fragment [Variable "section" Normal]) @?= "{#section}"
+
+    label "Label expansion" $ test $
+      show (Embed Label [Variable "domain" Normal]) @?= "{.domain}"
+
+    label "Path segment expansion" $ test $
+      show (Embed PathSegment [Variable "segments" Normal]) @?= "{/segments}"
+
+    label "Path parameter expansion" $ test $
+      show (Embed PathParameter [Variable "params" Normal]) @?= "{;params}"
+
+    label "Query expansion" $ test $
+      show (Embed Query [Variable "filter" Normal]) @?= "{?filter}"
+
+    label "Query continuation expansion" $ test $
+      show (Embed QueryContinuation [Variable "page" Normal]) @?= "{&page}"
+
+    label "Explode modifier" $ test $
+      show (Embed Simple [Variable "list" Explode]) @?= "{list*}"
+
+    label "MaxLength modifier" $ test $ do
+      show (Embed Simple [Variable "var" (MaxLength 3)]) @?= "{var:3}"
+      show (Embed Simple [Variable "var" (MaxLength 10)]) @?= "{var:10}"
+
+    label "Multiple variables" $ test $
+      show (Embed Simple [Variable "x" Normal, Variable "y" Normal]) @?= "{x,y}"
+
+    label "Multiple variables with modifiers" $ test $ do
+      show (Embed Simple [Variable "x" (MaxLength 5), Variable "y" Explode]) @?= "{x:5,y*}"
+      show (Embed Query [Variable "filter" Explode, Variable "sort" Normal]) @?= "{?filter*,sort}"
+
+    label "renderTemplate full templates" $ test $ do
+      let template1 = UriTemplate [Literal "/users/", Embed Simple [Variable "userId" Normal]]
+      renderTemplate template1 @?= "/users/{userId}"
+
+      let template2 = UriTemplate [Literal "/api", Embed Query [Variable "page" Normal], Embed QueryContinuation [Variable "limit" Normal]]
+      renderTemplate template2 @?= "/api{?page}{&limit}"
+
+      let template3 = UriTemplate [Embed PathSegment [Variable "path" Explode], Literal "/file.txt"]
+      renderTemplate template3 @?= "{/path*}/file.txt"
+
+    label "Round-trip: parse then show" $ test $ do
+      let testRoundTrip input = do
+            case parseTemplate input of
+              Right template -> renderTemplate template @?= input
+              Left err -> assertFailure $ "Parse failed: " ++ show err
+
+      testRoundTrip "{var}"
+      testRoundTrip "{+path}"
+      testRoundTrip "{#section}"
+      testRoundTrip "{.domain}"
+      testRoundTrip "{/segments*}"
+      testRoundTrip "{;params}"
+      testRoundTrip "{?query*}"
+      testRoundTrip "{&continuation}"
+      testRoundTrip "/users/{userId}/posts{?status,limit}"
+      testRoundTrip "http://example.com{/path*}{?query*}"
+
+
+isStringInstanceTests :: TestRegistry ()
+isStringInstanceTests = label "IsString Instance Tests" $
+  suite $ do
+    label "Simple template literal" $ test $ do
+      let template = S.fromString "/users/{userId}" :: UriTemplate
+      renderTemplate template @?= "/users/{userId}"
+
+    label "Template with query params" $ test $ do
+      let template = S.fromString "/api{?page,limit}" :: UriTemplate
+      renderTemplate template @?= "/api{?page,limit}"
+
+    label "Complex template" $ test $ do
+      let template = S.fromString "http://example.com{/path*}{?query*}{#fragment}" :: UriTemplate
+      renderTemplate template @?= "http://example.com{/path*}{?query*}{#fragment}"
+
+    label "Template with all modifier types" $ test $ do
+      let template = S.fromString "{var}{+reserved}{#fragment}{.label}{/path}{;params}{?query}{&cont}" :: UriTemplate
+      renderTemplate template @?= "{var}{+reserved}{#fragment}{.label}{/path}{;params}{?query}{&cont}"
+
+    label "Template with value modifiers" $ test $ do
+      let template = S.fromString "{var:3}{list*}{name:10}" :: UriTemplate
+      renderTemplate template @?= "{var:3}{list*}{name:10}"
+
+    label "Plain literal without variables" $ test $ do
+      let template = S.fromString "/static/path" :: UriTemplate
+      renderTemplate template @?= "/static/path"
+
+    label "Empty template" $ test $ do
+      let template = S.fromString "" :: UriTemplate
+      renderTemplate template @?= ""
+
+    label "Template can be used with render" $ test $ do
+      let template = S.fromString "/users/{userId}" :: UriTemplate
+      let rendered = render template [("userId", WrappedValue $ Single (123 :: Int))] :: String
+      rendered @?= "/users/123"
 
 
 embedTests = label "Embed Tests" $
@@ -201,7 +313,7 @@ dom :: [TemplateString]
 dom = ["example", "com"]
 
 
-quasiQuoterTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> TestRegistry ()
+quasiQuoterTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> TestRegistry ()
 quasiQuoterTests (@?=) = label "QuasiQuoter Tests" $
   suite $ do
     label "Simple" $ test ([uri|{var}|] @?= "value")
@@ -219,7 +331,7 @@ quasiQuoterTests (@?=) = label "QuasiQuoter Tests" $
     label "Explode Associative List Query Params" $ test ([uri|{?keys*}|] @?= "?semi=%3B&dot=.&comma=%2C")
 
 
-unescaped :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+unescaped :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 unescaped (@?=) = do
   [uri|{+path:6}/here|] @?= "/foo/b/here"
   [uri|{+list}|] @?= "red,green,blue"
@@ -228,7 +340,7 @@ unescaped (@?=) = do
   [uri|{+keys*}|] @?= "semi=;,dot=.,comma=,"
 
 
-fragment :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+fragment :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 fragment (@?=) = do
   [uri|{#path:6}/here|] @?= "#/foo/b/here"
   [uri|{#list}|] @?= "#red,green,blue"
@@ -237,7 +349,7 @@ fragment (@?=) = do
   [uri|{#keys*}|] @?= "#semi=;,dot=.,comma=,"
 
 
-labelTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+labelTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 labelTests (@?=) = do
   [uri|X{.var:3}|] @?= "X.val"
   [uri|X{.list}|] @?= "X.red,green,blue"
@@ -246,7 +358,7 @@ labelTests (@?=) = do
   [uri|X{.keys*}|] @?= "X.semi=%3B.dot=..comma=%2C"
 
 
-pathTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+pathTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 pathTests (@?=) = do
   [uri|{/var:1,var}|] @?= "/v/value"
   [uri|{/list}|] @?= "/red,green,blue"
@@ -256,7 +368,7 @@ pathTests (@?=) = do
   [uri|{/keys*}|] @?= "/semi=%3B/dot=./comma=%2C"
 
 
-pathParams :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+pathParams :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 pathParams (@?=) = do
   [uri|{;hello:5}|] @?= ";hello=Hello"
   [uri|{;list}|] @?= ";list=red,green,blue"
@@ -265,7 +377,7 @@ pathParams (@?=) = do
   [uri|{;keys*}|] @?= ";semi=%3B;dot=.;comma=%2C"
 
 
-queryParams :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+queryParams :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 queryParams (@?=) = do
   [uri|{?var:3}|] @?= "?var=val"
   [uri|{?list}|] @?= "?list=red,green,blue"
@@ -274,7 +386,7 @@ queryParams (@?=) = do
   [uri|{?keys*}|] @?= "?semi=%3B&dot=.&comma=%2C"
 
 
-continuedQueryParams :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+continuedQueryParams :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 continuedQueryParams (@?=) = do
   [uri|{&var:3}|] @?= "&var=val"
   [uri|{&list}|] @?= "&list=red,green,blue"
@@ -284,7 +396,7 @@ continuedQueryParams (@?=) = do
 
 
 -- Edge case tests for empty values
-emptyValueTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+emptyValueTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 emptyValueTests (@?=) = do
   -- Empty string variable
   [uri|{emptyStr}|] @?= ""
@@ -320,7 +432,7 @@ emptyValueTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.2 - Simple String Expansion
-simpleExpansionTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+simpleExpansionTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 simpleExpansionTests (@?=) = do
   [uri|{var}|] @?= "value"
   [uri|{hello}|] @?= "Hello%20World%21"
@@ -339,7 +451,7 @@ simpleExpansionTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.3 - Reserved Expansion
-reservedExpansionTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+reservedExpansionTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 reservedExpansionTests (@?=) = do
   [uri|{+var}|] @?= "value"
   [uri|{+hello}|] @?= "Hello World!"
@@ -360,7 +472,7 @@ reservedExpansionTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.4 - Fragment Expansion
-fragmentExpansionTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+fragmentExpansionTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 fragmentExpansionTests (@?=) = do
   [uri|{#var}|] @?= "#value"
   [uri|{#hello}|] @?= "#Hello World!"
@@ -377,7 +489,7 @@ fragmentExpansionTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.5 - Label Expansion with Dot-Prefix
-labelExpansionTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+labelExpansionTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 labelExpansionTests (@?=) = do
   [uri|{.who}|] @?= ".fred"
   [uri|{.who,who}|] @?= ".fred.fred"
@@ -394,7 +506,7 @@ labelExpansionTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.6 - Path Segment Expansion
-pathSegmentExpansionTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+pathSegmentExpansionTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 pathSegmentExpansionTests (@?=) = do
   [uri|{/who}|] @?= "/fred"
   [uri|{/who,who}|] @?= "/fred/fred"
@@ -412,7 +524,7 @@ pathSegmentExpansionTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.7 - Path-Style Parameter Expansion
-pathParameterExpansionTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+pathParameterExpansionTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 pathParameterExpansionTests (@?=) = do
   [uri|{;who}|] @?= ";who=fred"
   [uri|{;half}|] @?= ";half=50%25"
@@ -428,7 +540,7 @@ pathParameterExpansionTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.8 - Form-Style Query Expansion
-queryExpansionTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+queryExpansionTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 queryExpansionTests (@?=) = do
   [uri|{?who}|] @?= "?who=fred"
   [uri|{?half}|] @?= "?half=50%25"
@@ -442,7 +554,7 @@ queryExpansionTests (@?=) = do
 
 
 -- RFC 6570 Section 3.2.9 - Form-Style Query Continuation
-queryContinuationTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+queryContinuationTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 queryContinuationTests (@?=) = do
   [uri|{&who}|] @?= "&who=fred"
   [uri|{&half}|] @?= "&half=50%25"
@@ -456,7 +568,7 @@ queryContinuationTests (@?=) = do
 
 
 -- Complex combinations and edge cases
-complexCombinationTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+complexCombinationTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 complexCombinationTests (@?=) = do
   -- Multiple expansions in one template
   [uri|{var}{hello}|] @?= "valueHello%20World%21"
@@ -473,7 +585,7 @@ complexCombinationTests (@?=) = do
 
 
 -- Special character encoding tests
-specialCharacterTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+specialCharacterTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 specialCharacterTests (@?=) = do
   -- Special characters that need encoding in simple expansion
   [uri|{hello}|] @?= "Hello%20World%21"
@@ -487,7 +599,7 @@ specialCharacterTests (@?=) = do
 
 
 -- Prefix modifier tests (length constraints)
-prefixModifierTests :: (Eq s, IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
+prefixModifierTests :: (Eq s, S.IsString s, Buildable s) => (s -> s -> Assertion) -> Assertion
 prefixModifierTests (@?=) = do
   -- Simple expansion
   [uri|{var:1}|] @?= "v"
