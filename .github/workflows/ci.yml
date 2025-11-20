@@ -3,13 +3,21 @@ name: build
 jobs:
   runhaskell:
     name: Build & test uri-templater
-    runs-on: ubuntu-latest # or macOS-latest, or windows-latest
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc:
+          - version: '9.6.7'
+            stack-yaml: 'stack-ghc-9.6.yaml'
+          - version: '9.8.4'
+            stack-yaml: 'stack-ghc-9.8.yaml'
+          - version: '9.10.3'
+            stack-yaml: 'stack-ghc-9.10.yaml'
     steps:
       - uses: actions/checkout@v2
       - uses: haskell/actions/setup@v1
         with:
-          ghc-version: '8.8.3' # Exact version of ghc to use
-          # cabal-version: 'latest'. Omitted, but defaults to 'latest'
+          ghc-version: ${{ matrix.ghc.version }}
           enable-stack: true
           stack-version: 'latest'
-      - run: stack test
+      - run: stack test --stack-yaml ${{ matrix.ghc.stack-yaml }}
