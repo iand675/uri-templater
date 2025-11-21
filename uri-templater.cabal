@@ -56,6 +56,7 @@ test-suite test-uri-templates
                      template-haskell,
                      HUnit,
                      prettyprinter,
+                     http-api-data,
                      vector
 
 test-suite doctests

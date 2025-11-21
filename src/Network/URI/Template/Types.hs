@@ -1,4 +1,6 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -8,19 +10,25 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Network.URI.Template.Types where
 
 import Control.Arrow (Arrow ((***)))
 import Data.Bifunctor (Bifunctor (bimap))
+import Data.Char (isUpper, toLower)
 import Data.Kind (Type)
 import Data.Fixed (Fixed, HasResolution)
 import Data.Foldable as F (Foldable (toList))
 import Data.Functor.Const (Const)
 import Data.Functor.Identity (Identity)
+import qualified Data.Text as T
+import GHC.Generics
 import qualified Data.HashMap.Strict as HS
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.List (intercalate)
@@ -628,3 +636,78 @@ data Modifier
   | -- | Prefixed by @&@
     QueryContinuation
   deriving (Read, Show, Eq)
+
+
+-------------------------------------------------------------------------------
+-- Generics-based derivation
+-------------------------------------------------------------------------------
+
+-- | Options for generic derivation, matching the TH Options
+data GenericOptions = GenericOptions
+  { genericFieldLabelModifier :: String -> String
+  , genericConstructorTagModifier :: String -> String
+  , genericOmitNothingFields :: Bool
+  , genericUnwrapUnaryRecords :: Bool
+  }
+
+-- | Default options for generic derivation
+defaultGenericOptions :: GenericOptions
+defaultGenericOptions = GenericOptions
+  { genericFieldLabelModifier = id
+  , genericConstructorTagModifier = id
+  , genericOmitNothingFields = False
+  , genericUnwrapUnaryRecords = False
+  }
+
+-- | Helper to convert camelCase to snake_case (for use in default options)
+camelTo2Generic :: Char -> String -> String
+camelTo2Generic _ "" = ""
+camelTo2Generic c (x:xs) = toLower x : go xs
+  where
+    go "" = ""
+    go (u:l:rest) | isUpper u && isUpper l = c : toLower u : toLower l : go rest
+    go (u:rest) | isUpper u = c : toLower u : go rest
+    go (l:rest) = toLower l : go rest
+
+-- | Generic implementation class (only works with record types)
+class GToTemplateValue f where
+  type GTemplateRep f :: Type
+  gToTemplateValue' :: GenericOptions -> f a -> TemplateValue (GTemplateRep f)
+
+-- | Metadata: datatype name
+instance (GToTemplateValue f) => GToTemplateValue (D1 c f) where
+  type GTemplateRep (D1 c f) = GTemplateRep f
+  gToTemplateValue' opts (M1 x) = gToTemplateValue' opts x
+
+-- | Constructor with record fields - always produces Associative
+instance (GToTemplateValueRecord f) => GToTemplateValue (C1 c f) where
+  type GTemplateRep (C1 c f) = Associative
+  gToTemplateValue' opts (M1 x) =
+    let pairs = gToTemplateValueRecord opts x
+    in Associative pairs
+
+-- | Helper class for record fields
+class GToTemplateValueRecord f where
+  gToTemplateValueRecord :: GenericOptions -> f a -> [(TemplateValue Single, TemplateValue Single)]
+
+-- | Single field selector
+instance (Selector s, ToTemplateValue a, TemplateRep a ~ Single) => GToTemplateValueRecord (S1 s (K1 i a)) where
+  gToTemplateValueRecord opts m@(M1 (K1 x)) =
+    let fieldName = selName m
+        modifiedName = genericFieldLabelModifier opts fieldName
+        key = Single (T.pack modifiedName)
+        value = toTemplateValue x
+    in [(key, value)]
+
+-- | Product of fields (multiple fields)
+instance (GToTemplateValueRecord f, GToTemplateValueRecord g) => GToTemplateValueRecord (f :*: g) where
+  gToTemplateValueRecord opts (f :*: g) =
+    gToTemplateValueRecord opts f ++ gToTemplateValueRecord opts g
+
+-- | Generic to TemplateValue with default options
+gToTemplateValue :: (Generic a, GToTemplateValue (Rep a)) => a -> TemplateValue (GTemplateRep (Rep a))
+gToTemplateValue = gToTemplateValueWith defaultGenericOptions
+
+-- | Generic to TemplateValue with custom options
+gToTemplateValueWith :: (Generic a, GToTemplateValue (Rep a)) => GenericOptions -> a -> TemplateValue (GTemplateRep (Rep a))
+gToTemplateValueWith opts = gToTemplateValue' opts . from
