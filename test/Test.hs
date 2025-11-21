@@ -209,6 +209,7 @@ main = do
     embedTests
     thDerivationTests
     genericsDerivationTests
+    percentEncodingTests
     label "RFC 6570 Core Examples" $
       suite $ do
         label "unescaped" $ test $ unescaped strEq
@@ -986,4 +987,126 @@ quasiQuoterPatternTests = label "QuasiQuoter Pattern Tests" $
       case parseTemplate "/users/{userId}" of
         Right tpl -> checkTemplate tpl @?= "userId"
         Left _ -> assertFailure "Parse should succeed"
+
+
+percentEncodingTests :: TestRegistry ()
+percentEncodingTests = label "Percent Encoding Tests" $ suite $ do
+  -- Tests for percent-encoded sequences in literal parts of templates
+  label "Percent-encoded space in literal" $ test $ do
+    case parseTemplate "/path%20with%20spaces" of
+      Right tpl -> renderTemplate tpl @?= "/path%20with%20spaces"
+      Left _ -> assertFailure "Should parse percent-encoded spaces"
+
+  label "Percent-encoded special chars in literal" $ test $ do
+    case parseTemplate "/api%2Fv1%2Fresource" of
+      Right tpl -> renderTemplate tpl @?= "/api%2Fv1%2Fresource"
+      Left _ -> assertFailure "Should parse percent-encoded slashes"
+
+  label "Mixed literal and percent-encoded in literal" $ test $ do
+    case parseTemplate "/hello%20world/test" of
+      Right tpl -> renderTemplate tpl @?= "/hello%20world/test"
+      Left _ -> assertFailure "Should parse mixed content"
+
+  label "Percent-encoded literal with variable" $ test $ do
+    case parseTemplate "/path%20with%20spaces/{var}" of
+      Right tpl -> do
+        renderTemplate tpl @?= "/path%20with%20spaces/{var}"
+        let result = render tpl [("var", WrappedValue $ Single ("test" :: T.Text))]
+        result @?= ("/path%20with%20spaces/test" :: T.Text)
+      Left _ -> assertFailure "Should parse percent-encoded literal with variable"
+
+  label "Multiple percent-encoded sequences in literal" $ test $ do
+    case parseTemplate "/a%20b%20c%20d" of
+      Right tpl -> renderTemplate tpl @?= "/a%20b%20c%20d"
+      Left _ -> assertFailure "Should parse multiple percent-encoded sequences"
+
+  -- Tests for percent-encoded sequences in variable names
+  label "Percent-encoded char in variable name" $ test $ do
+    case parseTemplate "{user%5Fid}" of
+      Right tpl -> do
+        renderTemplate tpl @?= "{user%5Fid}"
+        let result = render tpl [("user%5Fid", WrappedValue $ Single ("123" :: T.Text))]
+        result @?= ("123" :: T.Text)
+      Left _ -> assertFailure "Should parse percent-encoded underscore in variable name"
+
+  label "Variable with percent-encoded name in query" $ test $ do
+    case parseTemplate "{?user%5Fname}" of
+      Right tpl -> do
+        let result = render tpl [("user%5Fname", WrappedValue $ Single ("alice" :: T.Text))]
+        result @?= ("?user%5Fname=alice" :: T.Text)
+      Left _ -> assertFailure "Should parse percent-encoded variable name in query"
+
+  -- Tests for rendering with values that need encoding
+  label "Render space in simple expansion" $ test $ do
+    case parseTemplate "{value}" of
+      Right tpl -> do
+        let result = render tpl [("value", WrappedValue $ Single ("hello world" :: T.Text))]
+        result @?= ("hello%20world" :: T.Text)
+      Left _ -> assertFailure "Should parse simple template"
+
+  label "Render special chars in simple expansion" $ test $ do
+    case parseTemplate "{value}" of
+      Right tpl -> do
+        let result = render tpl [("value", WrappedValue $ Single ("a/b?c=d" :: T.Text))]
+        result @?= ("a%2Fb%3Fc%3Dd" :: T.Text)
+      Left _ -> assertFailure "Should parse simple template"
+
+  label "Render reserved expansion does not encode" $ test $ do
+    case parseTemplate "{+value}" of
+      Right tpl -> do
+        let result = render tpl [("value", WrappedValue $ Single ("hello world" :: T.Text))]
+        result @?= ("hello world" :: T.Text)
+      Left _ -> assertFailure "Should parse reserved template"
+
+  label "Render path with encoding" $ test $ do
+    case parseTemplate "{/path}" of
+      Right tpl -> do
+        let result = render tpl [("path", WrappedValue $ Single ("hello world" :: T.Text))]
+        result @?= ("/hello%20world" :: T.Text)
+      Left _ -> assertFailure "Should parse path template"
+
+  label "Percent in value gets encoded" $ test $ do
+    case parseTemplate "{value}" of
+      Right tpl -> do
+        let result = render tpl [("value", WrappedValue $ Single ("100%" :: T.Text))]
+        result @?= ("100%25" :: T.Text)
+      Left _ -> assertFailure "Should parse simple template"
+
+  label "Already percent-encoded value gets double-encoded" $ test $ do
+    case parseTemplate "{value}" of
+      Right tpl -> do
+        let result = render tpl [("value", WrappedValue $ Single ("hello%20world" :: T.Text))]
+        -- The %20 in the value should be encoded to %2520
+        result @?= ("hello%2520world" :: T.Text)
+      Left _ -> assertFailure "Should parse simple template"
+
+  -- Edge cases
+  label "Percent at end of literal" $ test $ do
+    case parseTemplate "/path%20" of
+      Right tpl -> renderTemplate tpl @?= "/path%20"
+      Left _ -> assertFailure "Should parse percent-encoded sequence at end"
+
+  label "Multiple variables with percent-encoded names" $ test $ do
+    case parseTemplate "{user%5Fid}/{post%5Fid}" of
+      Right tpl -> do
+        let result = render tpl
+              [ ("user%5Fid", WrappedValue $ Single ("u123" :: T.Text))
+              , ("post%5Fid", WrappedValue $ Single ("p456" :: T.Text))
+              ]
+        result @?= ("u123/p456" :: T.Text)
+      Left _ -> assertFailure "Should parse multiple percent-encoded variable names"
+
+  label "Case sensitivity in percent encoding" $ test $ do
+    -- Both %2f and %2F should work (lowercase and uppercase hex)
+    case parseTemplate "/path%2Fwith%2fslashes" of
+      Right tpl -> renderTemplate tpl @?= "/path%2Fwith%2fslashes"
+      Left _ -> assertFailure "Should accept both uppercase and lowercase hex digits"
+
+  label "Unicode char gets properly encoded in output" $ test $ do
+    case parseTemplate "{value}" of
+      Right tpl -> do
+        let result = render tpl [("value", WrappedValue $ Single ("hello\x2665world" :: T.Text))]
+        -- Heart symbol should be UTF-8 encoded then percent-encoded
+        result @?= ("hello%E2%99%A5world" :: T.Text)
+      Left _ -> assertFailure "Should parse simple template"
 
