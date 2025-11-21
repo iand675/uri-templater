@@ -15,25 +15,50 @@ module Network.URI.Template (
 
   -- * Manually parsing, constructing, & writing URI templates
   render,
-  ToTemplateValue (..),
-  ViaHttpApiData (..),
-  WrappedValue (..),
+  renderTemplate,
+  parseTemplate,
+
+  -- * Convenience rendering functions
+  renderText,
+  renderLazyText,
+  renderByteString,
+  renderLazyByteString,
+  renderString,
+  renderBuilder,
+
+  -- * Core types
+  UriTemplate (..),
   AList (..),
   TemplateString (..),
-  parseTemplate,
-  renderTemplate,
-  UriTemplate (..),
+
+  -- * Error handling
+  ParseError (..),
+  RenderError (..),
+  displayParseError,
+  displayParseErrorSimple,
+  displayRenderError,
+
+  -- * Value conversion
+  ToTemplateValue (..),
+  ViaHttpApiData (..),
+
+  -- * Implementing a new output format for URI templates
+  Buildable (..),
+
+  -- * Advanced: Internal types (use with caution)
+  -- | These types are exposed for advanced use cases and library implementers.
+  -- Regular users should not need to use these directly.
+  WrappedValue (..),
   TemplateSegment (..),
   Modifier (..),
   ValueModifier (..),
   TemplateValue (..),
-
-  -- * Implementing a new output format for URI templates
-  Buildable (..),
 ) where
 
+import Network.URI.Template.Error
 import Network.URI.Template.Internal
 import Network.URI.Template.Parser
+import Network.URI.Template.Render
 import Network.URI.Template.TH
 import Network.URI.Template.Types
 
@@ -45,10 +70,32 @@ to view an example of each sort of interpolation to see how it works.
 RFC 6570 itself <https://tools.ietf.org/html/rfc6570> also
 provides a large number of these same examples, so it may help to look at it directly.
 
+== Error Handling
+
+This library provides structured error types for better error handling:
+
+* 'ParseError' - Returned when parsing URI templates fails
+* 'RenderError' - For future use with safe rendering functions
+
+The 'parseTemplate' function returns @Either ParseError UriTemplate@, which allows
+you to handle parse errors programmatically:
+
+>>> case parseTemplate "/users/{userId}" of { Right tpl -> "success"; Left err -> "failed" }
+"success"
+
+For better error messages with source context, use 'displayParseError',
+which shows the source location and surrounding text.
+
+Note: The 'IsString' instance for 'UriTemplate' still uses partial parsing
+for convenience with string literals. For production code, prefer explicit
+parsing with 'parseTemplate' or use the 'uri' quasi-quoter which validates
+at compile-time.
+
 $setup
 >>> :set -XQuasiQuotes
 >>> :set -XOverloadedStrings
 >>> import Network.URI.Template
+>>> import qualified Data.Text as T
 >>> let var = "value" :: TemplateString
 >>> let semi = ";" :: TemplateString
 >>> let hello = "Hello World!" :: TemplateString

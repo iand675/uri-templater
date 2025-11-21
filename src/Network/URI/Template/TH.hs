@@ -19,6 +19,7 @@ module Network.URI.Template.TH
 import Control.Monad (zipWithM)
 import Data.Char (isUpper, toLower, toUpper)
 import Data.List
+import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Language.Haskell.TH
@@ -30,10 +31,10 @@ import Network.URI.Template.Types
 
 
 variableNames :: UriTemplate -> [T.Text]
-variableNames (UriTemplate segments) = nub . V.foldr go [] $ segments
+variableNames (UriTemplate segments) = Set.toList $ V.foldr go Set.empty segments
  where
-  go (Literal _) l = l
-  go (Embed m vs) l = map variableName vs ++ l
+  go (Literal _) acc = acc
+  go (Embed _ vs) acc = foldr (Set.insert . variableName) acc vs
 
 
 segmentToExpr :: TemplateSegment -> Q Exp

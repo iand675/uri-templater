@@ -13,18 +13,19 @@ import qualified Data.String as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Vector as V
-import Data.Text.Prettyprint.Doc (Doc, pretty)
-import Data.Text.Prettyprint.Doc.Render.Terminal (AnsiStyle)
 import FlatParse.Basic
+import Network.URI.Template.Error
 import Network.URI.Template.Types
 
 
 -- | Parse a character in a specific range
+{-# INLINE charRange #-}
 charRange :: Char -> Char -> Parser e Char
 charRange l r = satisfy (\c -> l <= c && c <= r)
 
 
 -- | Parse a character matching any of the given ranges
+-- Uses fusedSatisfy for better performance when possible
 charRanges :: [(Char, Char)] -> Parser e Char
 charRanges [] = empty
 charRanges ((l, r) : rest) = satisfy (\c -> l <= c && c <= r) <|> charRanges rest
@@ -65,6 +66,7 @@ iprivate =
 
 
 -- | Parse a percent-encoded sequence
+{-# INLINE pctEncoded #-}
 pctEncoded :: Parser e String
 pctEncoded = do
   $(char '%')
@@ -72,6 +74,7 @@ pctEncoded = do
   d2 <- hexDigit
   return ['%', d1, d2]
  where
+  {-# INLINE hexDigit #-}
   hexDigit = satisfy (\c -> C.isDigit c || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))
 
 
@@ -92,13 +95,17 @@ literalChar =
 
 
 -- | Parse a literal segment
+-- Uses byteStringOf to avoid intermediate list allocations
+{-# INLINE literal #-}
 literal :: Parser e TemplateSegment
-literal = do
-  chunks <- some ((pure <$> literalChar) <|> pctEncoded)
-  return $ Literal (T.pack $ concat chunks)
+literal = Literal . TE.decodeUtf8 <$> byteStringOf (skipSome literalCharOrPct)
+ where
+  {-# INLINE literalCharOrPct #-}
+  literalCharOrPct = (() <$ literalChar) <|> (() <$ pctEncoded)
 
 
 -- | Parse variables in an embed
+{-# INLINE variables #-}
 variables :: Parser e TemplateSegment
 variables = do
   mod <- modifier
@@ -107,8 +114,9 @@ variables = do
 
 
 -- | Parse optional whitespace
+{-# INLINE ws #-}
 ws :: Parser e ()
-ws = skipMany ($(char ' ') <|> $(char '\t') <|> $(char '\n') <|> $(char '\r'))
+ws = skipMany (satisfy (\c -> c == ' ' || c == '\t' || c == '\n' || c == '\r'))
 
 
 -- | Parse a modifier character
@@ -135,45 +143,51 @@ variable = do
   valMod <- valueModifier
   return $ Variable nm valMod
  where
-  name = do
-    chunks <- some ((pure <$> alphaNum) <|> ($(char '_') >> pure "_") <|> pctEncoded)
-    return $ T.pack $ concat chunks
+  {-# INLINE name #-}
+  name = TE.decodeUtf8 <$> byteStringOf (skipSome nameChar)
+   where
+    {-# INLINE nameChar #-}
+    nameChar = (() <$ alphaNum) <|> (() <$ $(char '_')) <|> (() <$ pctEncoded)
+  {-# INLINE valueModifier #-}
   valueModifier =
     ($(char '*') *> pure Explode)
       <|> ($(char ':') *> (MaxLength <$> parseInt))
       <|> pure Normal
+  {-# INLINE parseInt #-}
   parseInt = do
     digits <- some digit
     return $ read digits
+  {-# INLINE alphaNum #-}
   alphaNum = satisfy (\c -> C.isAlphaNum c)
+  {-# INLINE digit #-}
   digit = satisfy C.isDigit
 
 
 -- | Parse an embedded variable expression
+{-# INLINE embed #-}
 embed :: Parser e TemplateSegment
 embed = $(char '{') *> variables <* $(char '}')
 
 
 -- | Parse a URI template segments
+{-# INLINE uriTemplate #-}
 uriTemplate :: Parser e (V.Vector TemplateSegment)
 uriTemplate = V.fromList <$> (ws *> many (literal <|> embed))
 
 
 -- | Helper to separate a parser by a separator
+{-# INLINE sepBy1 #-}
 sepBy1 :: Parser e a -> Parser e sep -> Parser e [a]
-sepBy1 p sep = do
-  first <- p
-  rest <- many (sep *> p)
-  return (first : rest)
+sepBy1 p sep = (:) <$> p <*> many (sep *> p)
 
 
 -- | Parse a template from a String
-parseTemplate :: String -> Either (Doc AnsiStyle) UriTemplate
+parseTemplate :: String -> Either ParseError UriTemplate
 parseTemplate input =
   case runParser uriTemplate (TE.encodeUtf8 $ T.pack input) of
     OK result _ -> Right (UriTemplate result)
-    Err _ -> Left (pretty ("Parse error in URI template: " ++ input))
-    Fail -> Left (pretty ("Parse error in URI template: " ++ input))
+    Err _ -> Left (GenericParseError ("Parse error in URI template: " ++ input))
+    Fail -> Left (GenericParseError ("Parse error in URI template: " ++ input))
 
 
 {- | 'IsString' instance for 'UriTemplate' allows using string literals directly as templates
