@@ -95,11 +95,13 @@ literalChar =
 
 
 -- | Parse a literal segment
+-- Uses byteStringOf to avoid intermediate list allocations
 {-# INLINE literal #-}
 literal :: Parser e TemplateSegment
-literal = do
-  chunks <- some ((pure <$> literalChar) <|> pctEncoded)
-  return $ Literal (T.pack $ concat chunks)
+literal = Literal . TE.decodeUtf8 <$> byteStringOf (skipSome literalCharOrPct)
+ where
+  {-# INLINE literalCharOrPct #-}
+  literalCharOrPct = (() <$ literalChar) <|> (() <$ pctEncoded)
 
 
 -- | Parse variables in an embed
@@ -142,9 +144,10 @@ variable = do
   return $ Variable nm valMod
  where
   {-# INLINE name #-}
-  name = do
-    chunks <- some ((pure <$> alphaNum) <|> ($(char '_') >> pure "_") <|> pctEncoded)
-    return $ T.pack $ concat chunks
+  name = TE.decodeUtf8 <$> byteStringOf (skipSome nameChar)
+   where
+    {-# INLINE nameChar #-}
+    nameChar = (() <$ alphaNum) <|> (() <$ $(char '_')) <|> (() <$ pctEncoded)
   {-# INLINE valueModifier #-}
   valueModifier =
     ($(char '*') *> pure Explode)
