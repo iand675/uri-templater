@@ -13,9 +13,8 @@ import qualified Data.String as S
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Vector as V
-import Data.Text.Prettyprint.Doc (Doc, pretty)
-import Data.Text.Prettyprint.Doc.Render.Terminal (AnsiStyle)
 import FlatParse.Basic
+import Network.URI.Template.Error
 import Network.URI.Template.Types
 
 
@@ -168,12 +167,12 @@ sepBy1 p sep = do
 
 
 -- | Parse a template from a String
-parseTemplate :: String -> Either (Doc AnsiStyle) UriTemplate
+parseTemplate :: String -> Either ParseError UriTemplate
 parseTemplate input =
   case runParser uriTemplate (TE.encodeUtf8 $ T.pack input) of
     OK result _ -> Right (UriTemplate result)
-    Err _ -> Left (pretty ("Parse error in URI template: " ++ input))
-    Fail -> Left (pretty ("Parse error in URI template: " ++ input))
+    Err _ -> Left (GenericParseError ("Parse error in URI template: " ++ input))
+    Fail -> Left (GenericParseError ("Parse error in URI template: " ++ input))
 
 
 {- | 'IsString' instance for 'UriTemplate' allows using string literals directly as templates

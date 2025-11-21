@@ -23,7 +23,9 @@ library
                      Network.URI.Template.TH,
                      Network.URI.Template.Types,
                      Network.URI.Template.Parser,
-                     Network.URI.Template.Internal
+                     Network.URI.Template.Internal,
+                     Network.URI.Template.Error,
+                     Network.URI.Template.Render
   build-depends:     base >= 4.9 && <5,
                      flatparse >= 0.5,
                      template-haskell,

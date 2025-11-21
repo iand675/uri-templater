@@ -15,7 +15,6 @@ import Control.Monad.Writer.Strict
 import qualified Data.String as S
 import Data.Text (Text)
 import qualified Data.Text as T
-import Data.Text.Prettyprint.Doc (Doc)
 import qualified Data.Vector as V
 import GHC.Generics (Generic, Rep)
 import Network.URI.Template
@@ -25,11 +24,6 @@ import Network.URI.Template.Types
 import System.Exit
 import Test.HUnit hiding (Label, path, test)
 import Web.HttpApiData (toUrlPiece)
-
-
--- Just being lazy here
-instance Eq (Doc ann) where
-  (==) d1 d2 = show d1 == show d2
 
 
 type TestRegistry = Writer [Test]

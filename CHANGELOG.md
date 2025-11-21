@@ -33,14 +33,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for GHC 9.6, 9.8, and 9.10 (#8, #9)
 - Multi-version GHC CI workflow (#9)
 - Comprehensive README with usage examples and documentation (#9)
+- Structured error types: `ParseError` and `RenderError` with detailed error information
+- `Network.URI.Template.Error` module with error display functions:
+  - `displayParseError` - Shows parse errors with source context
+  - `displayParseErrorSimple` - Simple error messages without context
+  - `displayRenderError` - Display render errors
+- Convenience rendering functions in `Network.URI.Template.Render`:
+  - `renderText` - Render to strict Text
+  - `renderLazyText` - Render to lazy Text
+  - `renderByteString` - Render to strict ByteString
+  - `renderLazyByteString` - Render to lazy ByteString
+  - `renderString` - Render to String
+  - `renderBuilder` - Render to ByteString Builder
+- Enhanced documentation with error handling examples and best practices
 
 ### Changed
 - **BREAKING**: `UriTemplate` changed from type alias to newtype for proper `IsString` support (#13)
 - **BREAKING**: `UriTemplate` now uses `Vector TemplateSegment` instead of `[TemplateSegment]` for better performance
+- **BREAKING**: `parseTemplate` now returns `Either ParseError UriTemplate` instead of `Either (Doc AnsiStyle) UriTemplate`
 - Migrated parser from Trifecta to flatparse for better performance and reduced dependencies (#10)
 - Updated CI workflow to use modern actions and Stack-managed GHC (#9)
 - Switched from ansi-wl-pprint to prettyprinter (#6)
 - Modernized library structure and dependencies (#8)
+- Reorganized public API exports with clear sections for core types, error handling, and advanced/internal types
+- Internal implementation types (`WrappedValue`, `TemplateSegment`, `Modifier`, `ValueModifier`, `TemplateValue`) moved to "Advanced" section but still exported for backward compatibility
 
 ### Removed
 - Removed trifecta, charset, and parsers dependencies in favor of flatparse (#10)
