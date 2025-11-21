@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0.1] - 2025-11-21
+
+### Fixed
+- **RFC 6570 Compliance**: Parser now properly rejects malformed URI templates with unbalanced braces
+  - Templates with unclosed expressions (missing `}`) now return `UnterminatedExpression` error with position
+  - Templates with unopened closing braces (orphan `}`) now return `UnexpectedCharacter` error with position
+  - Added `eof` check to `uriTemplate` parser to ensure all input is consumed
+  - Added `analyzeParseFailure` function to provide detailed, structured error messages on parse failures
+  - This fix ensures the library passes JSON Schema's format validation test suite for `uri-template` format
+
+### Added
+- Comprehensive test suite for parse error validation covering 7 test cases:
+  - Unclosed template expressions
+  - Unopened closing braces
+  - Nested braces
+  - Edge cases with single braces
+
 ## [1.0.0] - 2025-11-21
 
 ### Added

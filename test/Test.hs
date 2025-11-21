@@ -18,6 +18,7 @@ import qualified Data.Text as T
 import qualified Data.Vector as V
 import GHC.Generics (Generic, Rep)
 import Network.URI.Template
+import Network.URI.Template.Error
 import Network.URI.Template.Parser
 import Network.URI.Template.TH
 import Network.URI.Template.Types
@@ -191,6 +192,50 @@ genericsDerivationTests = label "Generics Derivation Tests" $
       rendered @?= ("?gen_product_name=Gadget&gen_product_price=200" :: Text)
 
 
+parseErrorTests :: TestRegistry ()
+parseErrorTests = label "Parse Error Tests" $
+  suite $ do
+    label "Unclosed template expression (missing closing brace)" $ test $ do
+      case parseTemplate "http://example.com/dictionary/{term:1}/{term" of
+        Left (UnterminatedExpression _) -> return ()
+        Left err -> assertFailure $ "Expected UnterminatedExpression, got: " ++ show err
+        Right _ -> assertFailure "Should fail to parse template with missing closing brace"
+
+    label "Unopened closing brace (orphan closing brace)" $ test $ do
+      case parseTemplate "http://example.com/dictionary/{term:1}/term}" of
+        Left (UnexpectedCharacter _ '}' _) -> return ()
+        Left err -> assertFailure $ "Expected UnexpectedCharacter for '}', got: " ++ show err
+        Right _ -> assertFailure "Should fail to parse template with extra closing brace"
+
+    label "Multiple unclosed braces" $ test $ do
+      case parseTemplate "{foo}{bar" of
+        Left (UnterminatedExpression _) -> return ()
+        Left err -> assertFailure $ "Expected UnterminatedExpression, got: " ++ show err
+        Right _ -> assertFailure "Should fail to parse template with unclosed brace"
+
+    label "Nested braces (invalid)" $ test $ do
+      case parseTemplate "{foo{bar}}" of
+        Left _ -> return ()
+        Right _ -> assertFailure "Should fail to parse template with nested braces"
+
+    label "Only opening brace" $ test $ do
+      case parseTemplate "{" of
+        Left (UnterminatedExpression _) -> return ()
+        Left err -> assertFailure $ "Expected UnterminatedExpression, got: " ++ show err
+        Right _ -> assertFailure "Should fail to parse template with only opening brace"
+
+    label "Only closing brace" $ test $ do
+      case parseTemplate "}" of
+        Left (UnexpectedCharacter _ '}' _) -> return ()
+        Left err -> assertFailure $ "Expected UnexpectedCharacter for '}', got: " ++ show err
+        Right _ -> assertFailure "Should fail to parse template with only closing brace"
+
+    label "Valid template should still parse correctly" $ test $ do
+      case parseTemplate "http://example.com/dictionary/{term:1}/{term}" of
+        Right _ -> return ()
+        Left err -> assertFailure $ "Valid template should parse, got error: " ++ show err
+
+
 main :: IO ()
 main = do
   counts <- testRun
@@ -210,6 +255,7 @@ main = do
     thDerivationTests
     genericsDerivationTests
     percentEncodingTests
+    parseErrorTests
     label "RFC 6570 Core Examples" $
       suite $ do
         label "unescaped" $ test $ unescaped strEq

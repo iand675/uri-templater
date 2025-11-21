@@ -172,7 +172,11 @@ embed = $(char '{') *> variables <* $(char '}')
 -- | Parse a URI template segments
 {-# INLINE uriTemplate #-}
 uriTemplate :: Parser e (V.Vector TemplateSegment)
-uriTemplate = V.fromList <$> (ws *> many (literal <|> embed))
+uriTemplate = do
+  ws
+  segments <- many (literal <|> embed)
+  eof  -- Ensure we consumed all input
+  return (V.fromList segments)
 
 
 -- | Helper to separate a parser by a separator
@@ -181,13 +185,33 @@ sepBy1 :: Parser e a -> Parser e sep -> Parser e [a]
 sepBy1 p sep = (:) <$> p <*> many (sep *> p)
 
 
+-- | Analyze parse failure to provide a better error message
+analyzeParseFailure :: String -> ParseError
+analyzeParseFailure input = go 0 0 input
+ where
+  go depth pos []
+    | depth > 0 = UnterminatedExpression (findLastOpen input)
+    | otherwise = GenericParseError ("Parse error in URI template: " ++ input)
+  go depth pos ('{' : rest) = go (depth + 1) (pos + 1) rest
+  go depth pos ('}' : rest)
+    | depth <= 0 = UnexpectedCharacter pos '}' "Unexpected closing brace without matching opening brace"
+    | otherwise = go (depth - 1) (pos + 1) rest
+  go depth pos (_ : rest) = go depth (pos + 1) rest
+
+  findLastOpen = go' 0 0
+   where
+    go' pos lastPos [] = lastPos
+    go' pos lastPos ('{' : rest) = go' (pos + 1) pos rest
+    go' pos lastPos (_ : rest) = go' (pos + 1) lastPos rest
+
+
 -- | Parse a template from a String
 parseTemplate :: String -> Either ParseError UriTemplate
 parseTemplate input =
   case runParser uriTemplate (TE.encodeUtf8 $ T.pack input) of
     OK result _ -> Right (UriTemplate result)
-    Err _ -> Left (GenericParseError ("Parse error in URI template: " ++ input))
-    Fail -> Left (GenericParseError ("Parse error in URI template: " ++ input))
+    Err _ -> Left (analyzeParseFailure input)
+    Fail -> Left (analyzeParseFailure input)
 
 
 {- | 'IsString' instance for 'UriTemplate' allows using string literals directly as templates
